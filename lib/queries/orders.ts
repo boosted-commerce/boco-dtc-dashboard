@@ -82,11 +82,11 @@ type ShopifyAggRow = {
   REVENUE_7D: number | string | null;
   ORDERS_YEAR_AGO: number | string | null;
   REVENUE_YEAR_AGO: number | string | null;
+  // Used for the Subscription Share % card (web sub revenue / web revenue).
+  // The "Subscription Revenue $" / "Recurring Revenue $" cards are sourced
+  // from Recharge instead — see getRechargeAggregates.
   SUB_REV_CURRENT: number | string | null;
   SUB_REV_PRIOR: number | string | null;
-  SUB_REV_YESTERDAY: number | string | null;
-  SUB_REV_7D: number | string | null;
-  SUB_REV_YEAR_AGO: number | string | null;
   WEB_REV_CURRENT: number | string | null;
   WEB_REV_PRIOR: number | string | null;
 };
@@ -117,9 +117,6 @@ async function getShopifyAggregates(brand: Brand, period: Period) {
         COALESCE(SUM(IFF(o.CREATED_AT >= b.year_ago_start AND o.CREATED_AT < b.year_ago_end, o.TOTAL_PRICE_AMOUNT, 0)), 0) AS REVENUE_YEAR_AGO,
         COALESCE(SUM(IFF(o.CREATED_AT >= b.current_start AND o.CREATED_AT < b.today_start AND o.IS_SUBSCRIPTION = TRUE AND o.SOURCE_NAME = 'web', o.TOTAL_PRICE_AMOUNT, 0)), 0) AS SUB_REV_CURRENT,
         COALESCE(SUM(IFF(o.CREATED_AT >= b.prior_start AND o.CREATED_AT < b.current_start AND o.IS_SUBSCRIPTION = TRUE AND o.SOURCE_NAME = 'web', o.TOTAL_PRICE_AMOUNT, 0)), 0) AS SUB_REV_PRIOR,
-        COALESCE(SUM(IFF(o.CREATED_AT >= b.yesterday_start AND o.CREATED_AT < b.today_start AND o.IS_SUBSCRIPTION = TRUE AND o.SOURCE_NAME = 'web', o.TOTAL_PRICE_AMOUNT, 0)), 0) AS SUB_REV_YESTERDAY,
-        COALESCE(SUM(IFF(o.CREATED_AT >= b.seven_day_start AND o.CREATED_AT < b.today_start AND o.IS_SUBSCRIPTION = TRUE AND o.SOURCE_NAME = 'web', o.TOTAL_PRICE_AMOUNT, 0)), 0) AS SUB_REV_7D,
-        COALESCE(SUM(IFF(o.CREATED_AT >= b.year_ago_start AND o.CREATED_AT < b.year_ago_end AND o.IS_SUBSCRIPTION = TRUE AND o.SOURCE_NAME = 'web', o.TOTAL_PRICE_AMOUNT, 0)), 0) AS SUB_REV_YEAR_AGO,
         COALESCE(SUM(IFF(o.CREATED_AT >= b.current_start AND o.CREATED_AT < b.today_start AND o.SOURCE_NAME = 'web', o.TOTAL_PRICE_AMOUNT, 0)), 0) AS WEB_REV_CURRENT,
         COALESCE(SUM(IFF(o.CREATED_AT >= b.prior_start AND o.CREATED_AT < b.current_start AND o.SOURCE_NAME = 'web', o.TOTAL_PRICE_AMOUNT, 0)), 0) AS WEB_REV_PRIOR
       FROM DW_ANALYTICS.FACT.SHOPIFY_ORDERS_RD_ORDERS o, bounds b
@@ -165,6 +162,11 @@ async function getShopifyDaily(brand: Brand, period: Period): Promise<DailyRow[]
 type RechargeAggRow = {
   NEW_SUBS_CURRENT: number | string | null;
   NEW_SUBS_PRIOR: number | string | null;
+  NEW_SUB_REV_CURRENT: number | string | null;
+  NEW_SUB_REV_PRIOR: number | string | null;
+  NEW_SUB_REV_YESTERDAY: number | string | null;
+  NEW_SUB_REV_7D: number | string | null;
+  NEW_SUB_REV_YEAR_AGO: number | string | null;
   REC_REV_CURRENT: number | string | null;
   REC_REV_PRIOR: number | string | null;
   REC_REV_YESTERDAY: number | string | null;
@@ -192,6 +194,11 @@ async function getRechargeAggregates(brand: Brand, period: Period) {
       SELECT
         COUNT_IF(r.TYPE = 'checkout' AND TO_TIMESTAMP(r.PROCESSED_AT) >= b.current_start AND TO_TIMESTAMP(r.PROCESSED_AT) < b.today_start) AS NEW_SUBS_CURRENT,
         COUNT_IF(r.TYPE = 'checkout' AND TO_TIMESTAMP(r.PROCESSED_AT) >= b.prior_start AND TO_TIMESTAMP(r.PROCESSED_AT) < b.current_start) AS NEW_SUBS_PRIOR,
+        COALESCE(SUM(IFF(r.TYPE = 'checkout' AND TO_TIMESTAMP(r.PROCESSED_AT) >= b.current_start AND TO_TIMESTAMP(r.PROCESSED_AT) < b.today_start, r.LINE_ITEMS_TOTAL_PRICE, 0)), 0) AS NEW_SUB_REV_CURRENT,
+        COALESCE(SUM(IFF(r.TYPE = 'checkout' AND TO_TIMESTAMP(r.PROCESSED_AT) >= b.prior_start AND TO_TIMESTAMP(r.PROCESSED_AT) < b.current_start, r.LINE_ITEMS_TOTAL_PRICE, 0)), 0) AS NEW_SUB_REV_PRIOR,
+        COALESCE(SUM(IFF(r.TYPE = 'checkout' AND TO_TIMESTAMP(r.PROCESSED_AT) >= b.yesterday_start AND TO_TIMESTAMP(r.PROCESSED_AT) < b.today_start, r.LINE_ITEMS_TOTAL_PRICE, 0)), 0) AS NEW_SUB_REV_YESTERDAY,
+        COALESCE(SUM(IFF(r.TYPE = 'checkout' AND TO_TIMESTAMP(r.PROCESSED_AT) >= b.seven_day_start AND TO_TIMESTAMP(r.PROCESSED_AT) < b.today_start, r.LINE_ITEMS_TOTAL_PRICE, 0)), 0) AS NEW_SUB_REV_7D,
+        COALESCE(SUM(IFF(r.TYPE = 'checkout' AND TO_TIMESTAMP(r.PROCESSED_AT) >= b.year_ago_start AND TO_TIMESTAMP(r.PROCESSED_AT) < b.year_ago_end, r.LINE_ITEMS_TOTAL_PRICE, 0)), 0) AS NEW_SUB_REV_YEAR_AGO,
         COALESCE(SUM(IFF(r.TYPE = 'recurring' AND TO_TIMESTAMP(r.PROCESSED_AT) >= b.current_start AND TO_TIMESTAMP(r.PROCESSED_AT) < b.today_start, r.LINE_ITEMS_TOTAL_PRICE, 0)), 0) AS REC_REV_CURRENT,
         COALESCE(SUM(IFF(r.TYPE = 'recurring' AND TO_TIMESTAMP(r.PROCESSED_AT) >= b.prior_start AND TO_TIMESTAMP(r.PROCESSED_AT) < b.current_start, r.LINE_ITEMS_TOTAL_PRICE, 0)), 0) AS REC_REV_PRIOR,
         COALESCE(SUM(IFF(r.TYPE = 'recurring' AND TO_TIMESTAMP(r.PROCESSED_AT) >= b.yesterday_start AND TO_TIMESTAMP(r.PROCESSED_AT) < b.today_start, r.LINE_ITEMS_TOTAL_PRICE, 0)), 0) AS REC_REV_YESTERDAY,
@@ -212,6 +219,7 @@ async function getRechargeAggregates(brand: Brand, period: Period) {
 type RechargeDailyRow = {
   D: string;
   NEW_SUBS: number | string | null;
+  NEW_SUB_REV: number | string | null;
   RECURRING_REV: number | string | null;
 };
 
@@ -221,6 +229,7 @@ async function getRechargeDaily(brand: Brand, period: Period): Promise<RechargeD
       SELECT
         TO_VARCHAR(DATE(TO_TIMESTAMP(PROCESSED_AT)), 'YYYY-MM-DD') AS D,
         COUNT_IF(TYPE = 'checkout') AS NEW_SUBS,
+        COALESCE(SUM(IFF(TYPE = 'checkout', LINE_ITEMS_TOTAL_PRICE, 0)), 0) AS NEW_SUB_REV,
         COALESCE(SUM(IFF(TYPE = 'recurring', LINE_ITEMS_TOTAL_PRICE, 0)), 0) AS RECURRING_REV
       FROM DW_ANALYTICS.FACT.RECHARGE_ORDERS
       WHERE BRAND = ?
@@ -351,9 +360,9 @@ export async function getStoreOverview(
     const tot = n(r.TOTAL_REV);
     return { date: r.D, value: tot > 0 ? (100 * sub) / tot : 0 };
   });
-  const subRevenueDaily: DailyPoint[] = daily.map((r) => ({
+  const newSubRevDaily: DailyPoint[] = rechargeDaily.map((r) => ({
     date: r.D,
-    value: n(r.SUB_REV),
+    value: n(r.NEW_SUB_REV),
   }));
   const newSubsDaily: DailyPoint[] = rechargeDaily.map((r) => ({
     date: r.D,
@@ -410,13 +419,16 @@ export async function getStoreOverview(
     prior: webRevPrior > 0 ? (100 * subRevPrior) / webRevPrior : 0,
     daily: subShareDaily,
   };
+  // New-subscription first-order revenue from Recharge checkouts. Pairs
+  // naturally with Recurring Revenue (renewals) and New Subscriptions (count)
+  // since all three come from the same Recharge source.
   const subscriptionRevenue: Bucket = {
-    current: subRevCurrent,
-    prior: subRevPrior,
-    yesterday: n(agg.SUB_REV_YESTERDAY),
-    sevenDayTotal: n(agg.SUB_REV_7D),
-    yearAgo: n(agg.SUB_REV_YEAR_AGO),
-    daily: subRevenueDaily,
+    current: n(rechargeAgg.NEW_SUB_REV_CURRENT),
+    prior: n(rechargeAgg.NEW_SUB_REV_PRIOR),
+    yesterday: n(rechargeAgg.NEW_SUB_REV_YESTERDAY),
+    sevenDayTotal: n(rechargeAgg.NEW_SUB_REV_7D),
+    yearAgo: n(rechargeAgg.NEW_SUB_REV_YEAR_AGO),
+    daily: newSubRevDaily,
   };
   const recurringRevenue: Bucket = {
     current: n(rechargeAgg.REC_REV_CURRENT),
