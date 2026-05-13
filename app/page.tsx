@@ -550,7 +550,7 @@ export default async function Home({
 
         <section className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
           <MetricCard
-            title="New Sub Revenue"
+            title="Subscription Revenue"
             bucket={data.subscriptionRevenue}
             kind="currency"
             sparklineColor="text-purple-600 dark:text-purple-400"

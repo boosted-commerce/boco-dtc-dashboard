@@ -360,9 +360,12 @@ export async function getStoreOverview(
     const tot = n(r.TOTAL_REV);
     return { date: r.D, value: tot > 0 ? (100 * sub) / tot : 0 };
   });
-  const newSubRevDaily: DailyPoint[] = rechargeDaily.map((r) => ({
+  // Subscription Revenue daily = new-sub first-order revenue + recurring renewals
+  // (total subscription business per day). Recurring is shown separately as a
+  // subset card.
+  const subRevenueDaily: DailyPoint[] = rechargeDaily.map((r) => ({
     date: r.D,
-    value: n(r.NEW_SUB_REV),
+    value: n(r.NEW_SUB_REV) + n(r.RECURRING_REV),
   }));
   const newSubsDaily: DailyPoint[] = rechargeDaily.map((r) => ({
     date: r.D,
@@ -419,16 +422,17 @@ export async function getStoreOverview(
     prior: webRevPrior > 0 ? (100 * subRevPrior) / webRevPrior : 0,
     daily: subShareDaily,
   };
-  // New-subscription first-order revenue from Recharge checkouts. Pairs
-  // naturally with Recurring Revenue (renewals) and New Subscriptions (count)
-  // since all three come from the same Recharge source.
+  // Total subscription business revenue (new sign-ups + renewals), from
+  // Recharge. Recurring Revenue is shown alongside as the renewals subset;
+  // Sub Rev − Recurring = new sign-up first-order revenue.
   const subscriptionRevenue: Bucket = {
-    current: n(rechargeAgg.NEW_SUB_REV_CURRENT),
-    prior: n(rechargeAgg.NEW_SUB_REV_PRIOR),
-    yesterday: n(rechargeAgg.NEW_SUB_REV_YESTERDAY),
-    sevenDayTotal: n(rechargeAgg.NEW_SUB_REV_7D),
-    yearAgo: n(rechargeAgg.NEW_SUB_REV_YEAR_AGO),
-    daily: newSubRevDaily,
+    current: n(rechargeAgg.NEW_SUB_REV_CURRENT) + n(rechargeAgg.REC_REV_CURRENT),
+    prior: n(rechargeAgg.NEW_SUB_REV_PRIOR) + n(rechargeAgg.REC_REV_PRIOR),
+    yesterday:
+      n(rechargeAgg.NEW_SUB_REV_YESTERDAY) + n(rechargeAgg.REC_REV_YESTERDAY),
+    sevenDayTotal: n(rechargeAgg.NEW_SUB_REV_7D) + n(rechargeAgg.REC_REV_7D),
+    yearAgo: n(rechargeAgg.NEW_SUB_REV_YEAR_AGO) + n(rechargeAgg.REC_REV_YEAR_AGO),
+    daily: subRevenueDaily,
   };
   const recurringRevenue: Bucket = {
     current: n(rechargeAgg.REC_REV_CURRENT),
