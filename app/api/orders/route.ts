@@ -1,5 +1,5 @@
 import { type NextRequest } from 'next/server';
-import { getStoreOverview, parsePeriod } from '@/lib/queries/orders';
+import { getStoreOverview, parseBrand, parsePeriod } from '@/lib/queries/orders';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -7,7 +7,7 @@ export const maxDuration = 60;
 
 export async function GET(request: NextRequest) {
   const sp = request.nextUrl.searchParams;
-  const brand = sp.get('brand') ?? 'ASN';
+  const brand = parseBrand(sp.get('brand'));
   const period = parsePeriod(sp.get('period'));
 
   try {

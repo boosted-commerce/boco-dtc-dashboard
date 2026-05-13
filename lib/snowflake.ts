@@ -34,15 +34,10 @@ function getConnection(): Promise<Connection> {
   return globalThis.__snowflakeConnection;
 }
 
-export async function execute<T = Record<string, unknown>>(
-  sqlText: string,
-  binds?: Bind[],
-): Promise<T[]> {
-  const connection = await getConnection();
+function runQuery<T>(connection: Connection, sqlText: string, binds?: Bind[]): Promise<T[]> {
   return new Promise((resolve, reject) => {
     connection.execute({
       sqlText,
-      // @types/snowflake-sdk's Binds type is overly narrow; cast and move on.
       binds: binds as unknown as snowflake.Binds | undefined,
       complete: (err, _stmt, rows) => {
         if (err) reject(err);
@@ -50,4 +45,30 @@ export async function execute<T = Record<string, unknown>>(
       },
     });
   });
+}
+
+const isDeadConnectionError = (err: unknown): boolean => {
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return (
+    msg.includes('terminated connection') ||
+    msg.includes('connection has been terminated') ||
+    msg.includes('connection is closed') ||
+    msg.includes('socket') // network drop
+  );
+};
+
+export async function execute<T = Record<string, unknown>>(
+  sqlText: string,
+  binds?: Bind[],
+): Promise<T[]> {
+  let connection = await getConnection();
+  try {
+    return await runQuery<T>(connection, sqlText, binds);
+  } catch (err) {
+    if (!isDeadConnectionError(err)) throw err;
+    // Discard the dead cached connection and reconnect once.
+    globalThis.__snowflakeConnection = undefined;
+    connection = await getConnection();
+    return runQuery<T>(connection, sqlText, binds);
+  }
 }

@@ -1,8 +1,11 @@
 import Link from 'next/link';
 import {
+  BRANDS,
   getStoreOverview,
+  parseBrand,
   parsePeriod,
   PERIODS,
+  type Brand,
   type Bucket,
   type DailyPoint,
   type Period,
@@ -56,7 +59,9 @@ function Sparkline({
     const y = pad + innerH - ((v - min) / range) * innerH;
     return [x, y] as const;
   });
-  const linePath = coords.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+  const linePath = coords
+    .map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`)
+    .join(' ');
   const areaPath = `${linePath} L${coords[coords.length - 1][0].toFixed(1)},${height - pad} L${coords[0][0].toFixed(1)},${height - pad} Z`;
   const [lastX, lastY] = coords[coords.length - 1];
 
@@ -69,13 +74,28 @@ function Sparkline({
       aria-hidden="true"
     >
       <path d={areaPath} fill="currentColor" opacity="0.08" />
-      <path d={linePath} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+      <path
+        d={linePath}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
       <circle cx={lastX.toFixed(1)} cy={lastY.toFixed(1)} r="2.5" fill="currentColor" />
     </svg>
   );
 }
 
-function ChangeChip({ current, prior, label }: { current: number; prior: number; label: string }) {
+function ChangeChip({
+  current,
+  prior,
+  label,
+}: {
+  current: number;
+  prior: number;
+  label: string;
+}) {
   const pct = pctChange(current, prior);
   if (pct === null) {
     return <span className="text-sm text-zinc-500 dark:text-zinc-400">— {label}</span>;
@@ -180,22 +200,39 @@ function Tiny({ label, value }: { label: string; value: string }) {
   );
 }
 
-function PeriodTabs({ active }: { active: Period }) {
+function PillTabs<T extends string | number>({
+  items,
+  active,
+  hrefFor,
+  ariaLabel,
+}: {
+  items: readonly T[];
+  active: T;
+  hrefFor: (item: T) => string;
+  ariaLabel: string;
+}) {
   return (
-    <div className="inline-flex rounded-full border border-zinc-200 bg-white p-1 text-sm dark:border-zinc-800 dark:bg-zinc-950">
-      {PERIODS.map((p) => {
-        const isActive = p === active;
+    <div
+      role="tablist"
+      aria-label={ariaLabel}
+      className="inline-flex rounded-full border border-zinc-200 bg-white p-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+    >
+      {items.map((item) => {
+        const isActive = item === active;
         return (
           <Link
-            key={p}
-            href={`/?period=${p}`}
+            key={String(item)}
+            href={hrefFor(item)}
+            role="tab"
+            aria-selected={isActive}
             className={`rounded-full px-3 py-1 transition ${
               isActive
                 ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
                 : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'
             }`}
           >
-            {p} days
+            {String(item)}
+            {typeof item === 'number' ? ' days' : ''}
           </Link>
         );
       })}
@@ -231,10 +268,7 @@ function TopProductsTable({ rows }: { rows: TopSubProduct[] }) {
         </thead>
         <tbody>
           {rows.map((r) => (
-            <tr
-              key={r.product}
-              className="border-t border-zinc-100 dark:border-zinc-800"
-            >
+            <tr key={r.product} className="border-t border-zinc-100 dark:border-zinc-800">
               <td className="px-5 py-2 text-zinc-900 dark:text-zinc-100">{r.product}</td>
               <td className="px-5 py-2 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
                 {r.newSubscriptions.toLocaleString()}
@@ -253,20 +287,34 @@ function TopProductsTable({ rows }: { rows: TopSubProduct[] }) {
 export default async function Home({
   searchParams,
 }: {
-  searchParams: Promise<{ period?: string }>;
+  searchParams: Promise<{ period?: string; brand?: string }>;
 }) {
   const sp = await searchParams;
   const period = parsePeriod(sp.period);
-  const data = await getStoreOverview('ASN', period);
+  const brand = parseBrand(sp.brand);
+  const data = await getStoreOverview(brand, period);
 
   return (
     <main className="min-h-screen bg-zinc-50 px-6 py-10 dark:bg-black">
       <div className="mx-auto max-w-6xl">
-        <header className="mb-6 flex items-center justify-between">
-          <h1 className="text-xl font-semibold uppercase tracking-wider text-zinc-700 dark:text-zinc-300">
-            Store Trends · {data.brand}
-          </h1>
-          <PeriodTabs active={data.period} />
+        <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-4">
+            <h1 className="text-xl font-semibold uppercase tracking-wider text-zinc-700 dark:text-zinc-300">
+              Store Trends
+            </h1>
+            <PillTabs<Brand>
+              items={BRANDS}
+              active={brand}
+              hrefFor={(b) => `/?brand=${b}&period=${period}`}
+              ariaLabel="Select brand"
+            />
+          </div>
+          <PillTabs<Period>
+            items={PERIODS}
+            active={period}
+            hrefFor={(p) => `/?brand=${brand}&period=${p}`}
+            ariaLabel="Select period"
+          />
         </header>
 
         <section className="mb-6 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950">
@@ -285,8 +333,8 @@ export default async function Home({
           <div className="mt-4 border-t border-zinc-100 pt-3 text-sm text-zinc-700 dark:border-zinc-800 dark:text-zinc-300">
             <span className="font-semibold">Yesterday</span> ·{' '}
             <span className="tabular-nums">{fmt(data.orders.yesterday, 'count')}</span> orders ·{' '}
-            <span className="tabular-nums">{fmt(data.revenue.yesterday, 'currency')}</span> revenue ·{' '}
-            <span className="tabular-nums">{fmt(data.aov.yesterday, 'aov')}</span> AOV
+            <span className="tabular-nums">{fmt(data.revenue.yesterday, 'currency')}</span>{' '}
+            revenue · <span className="tabular-nums">{fmt(data.aov.yesterday, 'aov')}</span> AOV
           </div>
         </section>
 
@@ -328,7 +376,8 @@ export default async function Home({
         </section>
 
         <footer className="text-xs text-zinc-400 dark:text-zinc-500">
-          Visitors, conversion rate, and channel mix arrive once the data team lands sessions in Snowflake.
+          Visitors, conversion rate, and channel mix arrive once the data team lands sessions in
+          Snowflake. Windows aligned to calendar days; current day excluded (pipeline lag ≈ 12h).
         </footer>
       </div>
     </main>

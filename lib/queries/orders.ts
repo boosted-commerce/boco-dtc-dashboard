@@ -8,6 +8,13 @@ export function parsePeriod(raw: unknown): Period {
   return PERIODS.find((p) => p === n) ?? 28;
 }
 
+export const BRANDS = ['ASN', 'VIV', 'PRL'] as const;
+export type Brand = (typeof BRANDS)[number];
+
+export function parseBrand(raw: unknown): Brand {
+  return (BRANDS as readonly string[]).includes(raw as string) ? (raw as Brand) : 'ASN';
+}
+
 export type DailyPoint = { date: string; value: number };
 
 export type Bucket = {
@@ -32,7 +39,7 @@ export type TopSubProduct = {
 };
 
 export type StoreOverview = {
-  brand: string;
+  brand: Brand;
   period: Period;
   orders: Bucket;
   revenue: Bucket;
@@ -43,6 +50,11 @@ export type StoreOverview = {
 };
 
 const n = (v: unknown) => Number(v ?? 0);
+
+// All windows are aligned to calendar-day boundaries and END at start-of-today
+// (i.e., exclude any in-progress current day). The Shopify→Snowflake pipeline
+// lags ~12h, so "today" is empty anyway, and aligning to whole days makes
+// "Yesterday", "7-day", and the period totals match human intuition.
 
 type ShopifyAggRow = {
   ORDERS_CURRENT: number | string | null;
@@ -61,34 +73,38 @@ type ShopifyAggRow = {
   WEB_REV_PRIOR: number | string | null;
 };
 
-async function getShopifyAggregates(brand: string, period: Period) {
+async function getShopifyAggregates(brand: Brand, period: Period) {
   const rows = await execute<ShopifyAggRow>(
     `
       WITH bounds AS (
         SELECT
-          DATEADD(day, -?, CURRENT_TIMESTAMP()) AS current_start,
-          DATEADD(day, -?, CURRENT_TIMESTAMP()) AS prior_start,
-          DATEADD(day, -?, CURRENT_TIMESTAMP()) AS year_ago_start,
-          DATEADD(day, -365, CURRENT_TIMESTAMP()) AS year_ago_end
+          DATE_TRUNC('day', CURRENT_TIMESTAMP()) AS today_start,
+          DATEADD(day, -?, DATE_TRUNC('day', CURRENT_TIMESTAMP())) AS current_start,
+          DATEADD(day, -?, DATE_TRUNC('day', CURRENT_TIMESTAMP())) AS prior_start,
+          DATEADD(day, -1, DATE_TRUNC('day', CURRENT_TIMESTAMP())) AS yesterday_start,
+          DATEADD(day, -7, DATE_TRUNC('day', CURRENT_TIMESTAMP())) AS seven_day_start,
+          DATEADD(day, -?, DATE_TRUNC('day', CURRENT_TIMESTAMP())) AS year_ago_start,
+          DATEADD(day, -365, DATE_TRUNC('day', CURRENT_TIMESTAMP())) AS year_ago_end
       )
       SELECT
-        COUNT_IF(o.CREATED_AT >= b.current_start) AS ORDERS_CURRENT,
-        COALESCE(SUM(IFF(o.CREATED_AT >= b.current_start, o.TOTAL_PRICE_AMOUNT, 0)), 0) AS REVENUE_CURRENT,
+        COUNT_IF(o.CREATED_AT >= b.current_start AND o.CREATED_AT < b.today_start) AS ORDERS_CURRENT,
+        COALESCE(SUM(IFF(o.CREATED_AT >= b.current_start AND o.CREATED_AT < b.today_start, o.TOTAL_PRICE_AMOUNT, 0)), 0) AS REVENUE_CURRENT,
         COUNT_IF(o.CREATED_AT >= b.prior_start AND o.CREATED_AT < b.current_start) AS ORDERS_PRIOR,
         COALESCE(SUM(IFF(o.CREATED_AT >= b.prior_start AND o.CREATED_AT < b.current_start, o.TOTAL_PRICE_AMOUNT, 0)), 0) AS REVENUE_PRIOR,
-        COUNT_IF(o.CREATED_AT >= DATEADD(day, -1, CURRENT_TIMESTAMP())) AS ORDERS_YESTERDAY,
-        COALESCE(SUM(IFF(o.CREATED_AT >= DATEADD(day, -1, CURRENT_TIMESTAMP()), o.TOTAL_PRICE_AMOUNT, 0)), 0) AS REVENUE_YESTERDAY,
-        COUNT_IF(o.CREATED_AT >= DATEADD(day, -7, CURRENT_TIMESTAMP())) AS ORDERS_7D,
-        COALESCE(SUM(IFF(o.CREATED_AT >= DATEADD(day, -7, CURRENT_TIMESTAMP()), o.TOTAL_PRICE_AMOUNT, 0)), 0) AS REVENUE_7D,
+        COUNT_IF(o.CREATED_AT >= b.yesterday_start AND o.CREATED_AT < b.today_start) AS ORDERS_YESTERDAY,
+        COALESCE(SUM(IFF(o.CREATED_AT >= b.yesterday_start AND o.CREATED_AT < b.today_start, o.TOTAL_PRICE_AMOUNT, 0)), 0) AS REVENUE_YESTERDAY,
+        COUNT_IF(o.CREATED_AT >= b.seven_day_start AND o.CREATED_AT < b.today_start) AS ORDERS_7D,
+        COALESCE(SUM(IFF(o.CREATED_AT >= b.seven_day_start AND o.CREATED_AT < b.today_start, o.TOTAL_PRICE_AMOUNT, 0)), 0) AS REVENUE_7D,
         COUNT_IF(o.CREATED_AT >= b.year_ago_start AND o.CREATED_AT < b.year_ago_end) AS ORDERS_YEAR_AGO,
         COALESCE(SUM(IFF(o.CREATED_AT >= b.year_ago_start AND o.CREATED_AT < b.year_ago_end, o.TOTAL_PRICE_AMOUNT, 0)), 0) AS REVENUE_YEAR_AGO,
-        COALESCE(SUM(IFF(o.CREATED_AT >= b.current_start AND o.IS_SUBSCRIPTION = TRUE AND o.SOURCE_NAME = 'web', o.TOTAL_PRICE_AMOUNT, 0)), 0) AS SUB_REV_CURRENT,
+        COALESCE(SUM(IFF(o.CREATED_AT >= b.current_start AND o.CREATED_AT < b.today_start AND o.IS_SUBSCRIPTION = TRUE AND o.SOURCE_NAME = 'web', o.TOTAL_PRICE_AMOUNT, 0)), 0) AS SUB_REV_CURRENT,
         COALESCE(SUM(IFF(o.CREATED_AT >= b.prior_start AND o.CREATED_AT < b.current_start AND o.IS_SUBSCRIPTION = TRUE AND o.SOURCE_NAME = 'web', o.TOTAL_PRICE_AMOUNT, 0)), 0) AS SUB_REV_PRIOR,
-        COALESCE(SUM(IFF(o.CREATED_AT >= b.current_start AND o.SOURCE_NAME = 'web', o.TOTAL_PRICE_AMOUNT, 0)), 0) AS WEB_REV_CURRENT,
+        COALESCE(SUM(IFF(o.CREATED_AT >= b.current_start AND o.CREATED_AT < b.today_start AND o.SOURCE_NAME = 'web', o.TOTAL_PRICE_AMOUNT, 0)), 0) AS WEB_REV_CURRENT,
         COALESCE(SUM(IFF(o.CREATED_AT >= b.prior_start AND o.CREATED_AT < b.current_start AND o.SOURCE_NAME = 'web', o.TOTAL_PRICE_AMOUNT, 0)), 0) AS WEB_REV_PRIOR
       FROM DW_ANALYTICS.FACT.SHOPIFY_ORDERS_RD_ORDERS o, bounds b
       WHERE o.BRAND = ?
         AND o.CREATED_AT >= b.year_ago_start
+        AND o.CREATED_AT < b.today_start
     `,
     [period, period * 2, 365 + period, brand],
   );
@@ -103,7 +119,7 @@ type DailyRow = {
   TOTAL_REV: number | string | null;
 };
 
-async function getShopifyDaily(brand: string, period: Period): Promise<DailyRow[]> {
+async function getShopifyDaily(brand: Brand, period: Period): Promise<DailyRow[]> {
   return execute<DailyRow>(
     `
       SELECT
@@ -114,7 +130,8 @@ async function getShopifyDaily(brand: string, period: Period): Promise<DailyRow[
         COALESCE(SUM(IFF(SOURCE_NAME = 'web', TOTAL_PRICE_AMOUNT, 0)), 0) AS TOTAL_REV
       FROM DW_ANALYTICS.FACT.SHOPIFY_ORDERS_RD_ORDERS
       WHERE BRAND = ?
-        AND CREATED_AT >= DATEADD(day, -?, CURRENT_TIMESTAMP())
+        AND CREATED_AT >= DATEADD(day, -?, DATE_TRUNC('day', CURRENT_TIMESTAMP()))
+        AND CREATED_AT < DATE_TRUNC('day', CURRENT_TIMESTAMP())
       GROUP BY DATE(CREATED_AT)
       ORDER BY DATE(CREATED_AT)
     `,
@@ -127,16 +144,17 @@ type RechargeAggRow = {
   NEW_SUBS_PRIOR: number | string | null;
 };
 
-async function getRechargeAggregates(brand: string, period: Period) {
+async function getRechargeAggregates(brand: Brand, period: Period) {
   const rows = await execute<RechargeAggRow>(
     `
       WITH bounds AS (
         SELECT
-          DATEADD(day, -?, CURRENT_TIMESTAMP()) AS current_start,
-          DATEADD(day, -?, CURRENT_TIMESTAMP()) AS prior_start
+          DATE_TRUNC('day', CURRENT_TIMESTAMP()) AS today_start,
+          DATEADD(day, -?, DATE_TRUNC('day', CURRENT_TIMESTAMP())) AS current_start,
+          DATEADD(day, -?, DATE_TRUNC('day', CURRENT_TIMESTAMP())) AS prior_start
       )
       SELECT
-        COUNT_IF(TO_TIMESTAMP(r.PROCESSED_AT) >= b.current_start) AS NEW_SUBS_CURRENT,
+        COUNT_IF(TO_TIMESTAMP(r.PROCESSED_AT) >= b.current_start AND TO_TIMESTAMP(r.PROCESSED_AT) < b.today_start) AS NEW_SUBS_CURRENT,
         COUNT_IF(TO_TIMESTAMP(r.PROCESSED_AT) >= b.prior_start AND TO_TIMESTAMP(r.PROCESSED_AT) < b.current_start) AS NEW_SUBS_PRIOR
       FROM DW_ANALYTICS.FACT.RECHARGE_ORDERS r, bounds b
       WHERE r.BRAND = ?
@@ -144,6 +162,7 @@ async function getRechargeAggregates(brand: string, period: Period) {
         AND r.LINE_ITEMS_PURCHASE_ITEM_TYPE = 'subscription'
         AND r.STATUS = 'success'
         AND TO_TIMESTAMP(r.PROCESSED_AT) >= b.prior_start
+        AND TO_TIMESTAMP(r.PROCESSED_AT) < b.today_start
     `,
     [period, period * 2, brand],
   );
@@ -152,7 +171,7 @@ async function getRechargeAggregates(brand: string, period: Period) {
 
 type RechargeDailyRow = { D: string; V: number | string | null };
 
-async function getRechargeDaily(brand: string, period: Period): Promise<RechargeDailyRow[]> {
+async function getRechargeDaily(brand: Brand, period: Period): Promise<RechargeDailyRow[]> {
   return execute<RechargeDailyRow>(
     `
       SELECT
@@ -163,7 +182,8 @@ async function getRechargeDaily(brand: string, period: Period): Promise<Recharge
         AND TYPE = 'checkout'
         AND LINE_ITEMS_PURCHASE_ITEM_TYPE = 'subscription'
         AND STATUS = 'success'
-        AND TO_TIMESTAMP(PROCESSED_AT) >= DATEADD(day, -?, CURRENT_TIMESTAMP())
+        AND TO_TIMESTAMP(PROCESSED_AT) >= DATEADD(day, -?, DATE_TRUNC('day', CURRENT_TIMESTAMP()))
+        AND TO_TIMESTAMP(PROCESSED_AT) < DATE_TRUNC('day', CURRENT_TIMESTAMP())
       GROUP BY DATE(TO_TIMESTAMP(PROCESSED_AT))
       ORDER BY DATE(TO_TIMESTAMP(PROCESSED_AT))
     `,
@@ -178,7 +198,7 @@ type TopProductRow = {
 };
 
 async function getTopSubscriptionProducts(
-  brand: string,
+  brand: Brand,
   period: Period,
 ): Promise<TopSubProduct[]> {
   const rows = await execute<TopProductRow>(
@@ -192,7 +212,8 @@ async function getTopSubscriptionProducts(
         AND TYPE = 'checkout'
         AND LINE_ITEMS_PURCHASE_ITEM_TYPE = 'subscription'
         AND STATUS = 'success'
-        AND TO_TIMESTAMP(PROCESSED_AT) >= DATEADD(day, -?, CURRENT_TIMESTAMP())
+        AND TO_TIMESTAMP(PROCESSED_AT) >= DATEADD(day, -?, DATE_TRUNC('day', CURRENT_TIMESTAMP()))
+        AND TO_TIMESTAMP(PROCESSED_AT) < DATE_TRUNC('day', CURRENT_TIMESTAMP())
       GROUP BY LINE_ITEMS_TITLE
       ORDER BY NEW_SUBSCRIPTIONS DESC
       LIMIT 10
@@ -207,7 +228,7 @@ async function getTopSubscriptionProducts(
 }
 
 export async function getStoreOverview(
-  brand: string = 'ASN',
+  brand: Brand = 'ASN',
   period: Period = 28,
 ): Promise<StoreOverview> {
   const [agg, daily, rechargeAgg, rechargeDaily, topProducts] = await Promise.all([
