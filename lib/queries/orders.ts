@@ -38,9 +38,23 @@ export type TopSubProduct = {
   firstOrderRevenue: number;
 };
 
+export type ChannelMixRow = {
+  channel: string;
+  currentRevenue: number;
+  priorRevenue: number;
+  sharePct: number;
+};
+
+export type ChannelMix = {
+  channels: ChannelMixRow[];
+  totalCurrent: number;
+  totalPrior: number;
+};
+
 export type StoreOverview = {
   brand: Brand;
   period: Period;
+  channelMix: ChannelMix;
   orders: Bucket;
   revenue: Bucket;
   aov: Bucket;
@@ -257,16 +271,72 @@ async function getTopSubscriptionProducts(
   }));
 }
 
+// Channel mix — all-channel revenue breakdown for scope framing.
+// Calendar-day boundaries match other metrics; period-aware.
+type ChannelRow = {
+  CHANNEL: string | null;
+  CURRENT_REV: number | string | null;
+  PRIOR_REV: number | string | null;
+};
+
+async function getChannelMix(brand: Brand, period: Period): Promise<ChannelMix> {
+  const rows = await execute<ChannelRow>(
+    `
+      WITH classified AS (
+        SELECT
+          CASE
+            WHEN IS_FAIRE_ORDER = TRUE OR SOURCE_NAME = 'faire' THEN 'Faire'
+            WHEN SOURCE_NAME = 'web' THEN 'DTC'
+            WHEN SOURCE_NAME = 'tiktok' THEN 'TikTok'
+            ELSE 'Other'
+          END AS CHANNEL,
+          CREATED_AT,
+          TOTAL_PRICE_AMOUNT
+        FROM DW_ANALYTICS.FACT.SHOPIFY_ORDERS_RD_ORDERS
+        WHERE BRAND = ?
+          AND CREATED_AT >= DATEADD(day, -?, DATE_TRUNC('day', CURRENT_TIMESTAMP()))
+          AND CREATED_AT < DATE_TRUNC('day', CURRENT_TIMESTAMP())
+      )
+      SELECT
+        CHANNEL,
+        COALESCE(SUM(IFF(CREATED_AT >= DATEADD(day, -?, DATE_TRUNC('day', CURRENT_TIMESTAMP())), TOTAL_PRICE_AMOUNT, 0)), 0) AS CURRENT_REV,
+        COALESCE(SUM(IFF(CREATED_AT < DATEADD(day, -?, DATE_TRUNC('day', CURRENT_TIMESTAMP())), TOTAL_PRICE_AMOUNT, 0)), 0) AS PRIOR_REV
+      FROM classified
+      GROUP BY CHANNEL
+    `,
+    [brand, period * 2, period, period],
+  );
+
+  const totalCurrent = rows.reduce((s, r) => s + n(r.CURRENT_REV), 0);
+  const totalPrior = rows.reduce((s, r) => s + n(r.PRIOR_REV), 0);
+
+  const channels: ChannelMixRow[] = rows
+    .map((r) => {
+      const currentRevenue = n(r.CURRENT_REV);
+      return {
+        channel: r.CHANNEL ?? 'Other',
+        currentRevenue,
+        priorRevenue: n(r.PRIOR_REV),
+        sharePct: totalCurrent > 0 ? (100 * currentRevenue) / totalCurrent : 0,
+      };
+    })
+    .filter((c) => c.currentRevenue > 0)
+    .sort((a, b) => b.currentRevenue - a.currentRevenue);
+
+  return { channels, totalCurrent, totalPrior };
+}
+
 export async function getStoreOverview(
   brand: Brand = 'ASN',
   period: Period = 28,
 ): Promise<StoreOverview> {
-  const [agg, daily, rechargeAgg, rechargeDaily, topProducts] = await Promise.all([
+  const [agg, daily, rechargeAgg, rechargeDaily, topProducts, channelMix] = await Promise.all([
     getShopifyAggregates(brand, period),
     getShopifyDaily(brand, period),
     getRechargeAggregates(brand, period),
     getRechargeDaily(brand, period),
     getTopSubscriptionProducts(brand, period),
+    getChannelMix(brand, period),
   ]);
 
   const ordersDaily: DailyPoint[] = daily.map((r) => ({ date: r.D, value: n(r.ORDERS) }));
@@ -365,6 +435,7 @@ export async function getStoreOverview(
   return {
     brand,
     period,
+    channelMix,
     orders,
     revenue,
     aov: aovBucket,

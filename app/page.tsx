@@ -7,6 +7,7 @@ import {
   PERIODS,
   type Brand,
   type Bucket,
+  type ChannelMix as ChannelMixData,
   type DailyPoint,
   type Period,
   type SubBucket,
@@ -100,17 +101,26 @@ function ChangeChip({
   if (pct === null) {
     return <span className="text-sm text-zinc-500 dark:text-zinc-400">— {label}</span>;
   }
-  const rounded = Math.round(pct);
-  const arrow = rounded > 0 ? '↑' : rounded < 0 ? '↓' : '→';
+  const absPct = Math.abs(pct);
+  // < 0.05% is effectively zero — show "flat" to avoid "↑ 0.0%" reading as noise.
+  if (absPct < 0.05) {
+    return (
+      <span className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+        → flat {label}
+      </span>
+    );
+  }
+  const arrow = pct > 0 ? '↑' : '↓';
   const color =
-    rounded > 0
+    pct > 0
       ? 'text-emerald-600 dark:text-emerald-400'
-      : rounded < 0
-        ? 'text-red-600 dark:text-red-400'
-        : 'text-zinc-500 dark:text-zinc-400';
+      : 'text-red-600 dark:text-red-400';
+  // One decimal under 10%, integer at or above. Surfaces small movements
+  // (sub-1%) without making big swings noisy.
+  const display = absPct < 10 ? absPct.toFixed(1) : Math.round(absPct).toString();
   return (
     <span className={`text-sm font-medium ${color}`}>
-      {arrow} {Math.abs(rounded)}% {label}
+      {arrow} {display}% {label}
     </span>
   );
 }
@@ -240,6 +250,146 @@ function PillTabs<T extends string | number>({
   );
 }
 
+const CHANNEL_STYLES: Record<
+  string,
+  { stroke: string; dot: string; text: string }
+> = {
+  DTC: {
+    stroke: 'stroke-emerald-500',
+    dot: 'bg-emerald-500',
+    text: 'text-emerald-700 dark:text-emerald-400',
+  },
+  TikTok: {
+    stroke: 'stroke-rose-500',
+    dot: 'bg-rose-500',
+    text: 'text-rose-700 dark:text-rose-400',
+  },
+  Faire: {
+    stroke: 'stroke-amber-500',
+    dot: 'bg-amber-500',
+    text: 'text-amber-700 dark:text-amber-500',
+  },
+  Other: {
+    stroke: 'stroke-zinc-400 dark:stroke-zinc-600',
+    dot: 'bg-zinc-400 dark:bg-zinc-600',
+    text: 'text-zinc-500 dark:text-zinc-400',
+  },
+};
+
+function ChannelDonut({
+  channels,
+  size = 120,
+  strokeWidth = 18,
+}: {
+  channels: ChannelMixData['channels'];
+  size?: number;
+  strokeWidth?: number;
+}) {
+  const cx = size / 2;
+  const r = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * r;
+  let cumulative = 0;
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox={`0 0 ${size} ${size}`}
+      className="-rotate-90"
+      aria-hidden="true"
+    >
+      <circle
+        cx={cx}
+        cy={cx}
+        r={r}
+        fill="none"
+        strokeWidth={strokeWidth}
+        className="stroke-zinc-100 dark:stroke-zinc-800"
+      />
+      {channels.map((c) => {
+        const len = (c.sharePct / 100) * circumference;
+        const dashArray = `${len.toFixed(2)} ${(circumference - len).toFixed(2)}`;
+        const dashOffset = -cumulative;
+        cumulative += len;
+        const style = CHANNEL_STYLES[c.channel] ?? CHANNEL_STYLES.Other;
+        return (
+          <circle
+            key={c.channel}
+            cx={cx}
+            cy={cx}
+            r={r}
+            fill="none"
+            strokeWidth={strokeWidth}
+            strokeDasharray={dashArray}
+            strokeDashoffset={dashOffset.toFixed(2)}
+            className={style.stroke}
+          />
+        );
+      })}
+    </svg>
+  );
+}
+
+function ChannelMix({
+  data,
+  period,
+}: {
+  data: ChannelMixData;
+  period: Period;
+}) {
+  if (data.channels.length === 0 || data.totalCurrent === 0) return null;
+  const dtcShare = data.channels.find((c) => c.channel === 'DTC')?.sharePct ?? 0;
+
+  return (
+    <section className="mb-6 rounded-lg border border-zinc-200 bg-white px-5 py-4 dark:border-zinc-800 dark:bg-zinc-950">
+      <div className="flex flex-wrap items-center gap-6">
+        <div className="relative shrink-0">
+          <ChannelDonut channels={data.channels} />
+          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+            <div className="text-[9px] uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+              DTC share
+            </div>
+            <div className="text-xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">
+              {dtcShare.toFixed(1)}%
+            </div>
+          </div>
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <span className="text-[10px] uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+              Total all channels ({period}d)
+            </span>
+            <span className="text-lg font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">
+              ${data.totalCurrent.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+            </span>
+            <ChangeChip
+              current={data.totalCurrent}
+              prior={data.totalPrior}
+              label="vs prior"
+            />
+          </div>
+          <ul className="mt-3 grid gap-1.5 text-sm sm:grid-cols-2">
+            {data.channels.map((c) => {
+              const style = CHANNEL_STYLES[c.channel] ?? CHANNEL_STYLES.Other;
+              return (
+                <li key={c.channel} className="flex items-center gap-2">
+                  <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${style.dot}`} />
+                  <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                    {c.channel}
+                  </span>
+                  <span className="tabular-nums text-zinc-500 dark:text-zinc-400">
+                    {c.sharePct.toFixed(1)}% ·{' '}
+                    ${c.currentRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function TopProductsTable({ rows }: { rows: TopSubProduct[] }) {
   if (rows.length === 0) {
     return (
@@ -337,6 +487,8 @@ export default async function Home({
             revenue · <span className="tabular-nums">{fmt(data.aov.yesterday, 'aov')}</span> AOV
           </div>
         </section>
+
+        <ChannelMix data={data.channelMix} period={data.period} />
 
         <section className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-4">
           <MetricCard
