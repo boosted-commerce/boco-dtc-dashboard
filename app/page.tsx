@@ -276,6 +276,34 @@ const CHANNEL_STYLES: Record<
   },
 };
 
+const fmtShort = (n: number): string => {
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`;
+  if (n >= 1_000) return `$${Math.round(n / 1_000)}K`;
+  return `$${Math.round(n).toLocaleString()}`;
+};
+
+function MiniTrend({ current, prior }: { current: number; prior: number }) {
+  const pct = pctChange(current, prior);
+  if (pct === null) {
+    return <span className="text-xs text-zinc-400 dark:text-zinc-500">new</span>;
+  }
+  const absPct = Math.abs(pct);
+  if (absPct < 0.05) {
+    return <span className="text-xs text-zinc-500 dark:text-zinc-400">→ flat</span>;
+  }
+  const arrow = pct > 0 ? '↑' : '↓';
+  const color =
+    pct > 0
+      ? 'text-emerald-600 dark:text-emerald-400'
+      : 'text-red-600 dark:text-red-400';
+  const display = absPct < 10 ? absPct.toFixed(1) : Math.round(absPct).toString();
+  return (
+    <span className={`text-xs font-medium ${color}`}>
+      {arrow} {display}%
+    </span>
+  );
+}
+
 function ChannelDonut({
   channels,
   size = 120,
@@ -371,15 +399,18 @@ function ChannelMix({
             {data.channels.map((c) => {
               const style = CHANNEL_STYLES[c.channel] ?? CHANNEL_STYLES.Other;
               return (
-                <li key={c.channel} className="flex items-center gap-2">
+                <li
+                  key={c.channel}
+                  className="flex flex-wrap items-center gap-x-2 gap-y-0.5"
+                >
                   <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${style.dot}`} />
                   <span className="font-medium text-zinc-900 dark:text-zinc-100">
                     {c.channel}
                   </span>
                   <span className="tabular-nums text-zinc-500 dark:text-zinc-400">
-                    {c.sharePct.toFixed(1)}% ·{' '}
-                    ${c.currentRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                    {c.sharePct.toFixed(1)}% · {fmtShort(c.currentRevenue)}
                   </span>
+                  <MiniTrend current={c.currentRevenue} prior={c.priorRevenue} />
                 </li>
               );
             })}
