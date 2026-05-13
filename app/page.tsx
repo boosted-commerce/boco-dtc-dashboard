@@ -338,7 +338,7 @@ export default async function Home({
           </div>
         </section>
 
-        <section className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
+        <section className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-4">
           <MetricCard
             title="Orders"
             bucket={data.orders}
@@ -361,6 +361,21 @@ export default async function Home({
             title="Subscription Share"
             bucket={data.subscriptionShare}
             kind="percent"
+            sparklineColor="text-purple-600 dark:text-purple-400"
+          />
+        </section>
+
+        <section className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
+          <MetricCard
+            title="Subscription Revenue"
+            bucket={data.subscriptionRevenue}
+            kind="currency"
+            sparklineColor="text-purple-600 dark:text-purple-400"
+          />
+          <MetricCard
+            title="Recurring Revenue"
+            bucket={data.recurringRevenue}
+            kind="currency"
             sparklineColor="text-purple-600 dark:text-purple-400"
           />
           <SubMetricCard
