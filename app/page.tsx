@@ -709,14 +709,22 @@ export default async function Home({
                 Top 25 by revenue · DTC orders only · click-through coming with Layer 3
               </div>
             </div>
-            <PillTabs<Layer2Tab>
-              items={LAYER2_TABS}
-              active={tab}
-              hrefFor={(t) => `/?brand=${brand}&period=${period}&tab=${t}`}
-              ariaLabel="Select layer 2 tab"
-              labelFor={(t) => LAYER2_LABELS[t]}
-              preserveScroll
-            />
+            <div className="flex items-center gap-3">
+              <Link
+                href={`/level-2?brand=${brand}&period=${period}&tab=${tab}`}
+                className="hidden text-xs text-zinc-500 underline hover:text-zinc-900 sm:inline dark:text-zinc-400 dark:hover:text-zinc-100"
+              >
+                Open as separate page →
+              </Link>
+              <PillTabs<Layer2Tab>
+                items={LAYER2_TABS}
+                active={tab}
+                hrefFor={(t) => `/?brand=${brand}&period=${period}&tab=${t}`}
+                ariaLabel="Select layer 2 tab"
+                labelFor={(t) => LAYER2_LABELS[t]}
+                preserveScroll
+              />
+            </div>
           </div>
           <Layer2Table
             rows={layer2Rows}
