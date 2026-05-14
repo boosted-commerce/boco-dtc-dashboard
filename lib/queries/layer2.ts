@@ -1,5 +1,6 @@
 import { execute } from '@/lib/snowflake';
 import type { Brand, DailyPoint, Period } from '@/lib/queries/orders';
+import { WATCHED_PAGES } from '@/lib/watched-pages';
 
 // Layer 2 — page-/product-/source-level tables below Level 1. Each function
 // returns the top N rows for the selected period with a daily-revenue series
@@ -51,6 +52,83 @@ const toRow = (r: RawRow, countNoun: 'orders' | 'units'): Layer2Row => ({
   countNoun,
   daily: parseDaily(r.DAILY_JSON),
 });
+
+export async function getWatchedPages(brand: Brand, period: Period): Promise<Layer2Row[]> {
+  const watched = WATCHED_PAGES[brand] ?? [];
+  if (watched.length === 0) return [];
+  // LEFT JOIN against a watched(path) virtual table so pages with no orders
+  // in the period still render (as $0 rows) — that's signal too, not noise.
+  // Use UNION ALL since Snowflake's VALUES inside a WITH clause is finicky.
+  const watchedCte = watched
+    .map((_, i) => (i === 0 ? '        SELECT ? AS path' : '        UNION ALL SELECT ?'))
+    .join('\n');
+  const rows = await execute<RawRow>(
+    `
+      WITH bounds AS (
+        SELECT
+          DATE_TRUNC('day', CURRENT_TIMESTAMP()) AS today_start,
+          DATEADD(day, -?, DATE_TRUNC('day', CURRENT_TIMESTAMP())) AS current_start,
+          DATEADD(day, -?, DATE_TRUNC('day', CURRENT_TIMESTAMP())) AS prior_start
+      ),
+      watched AS (
+${watchedCte}
+      ),
+      classified AS (
+        SELECT
+          SPLIT_PART(o.LANDING_SITE, '?', 1) AS landing_path,
+          o.CREATED_AT,
+          o.TOTAL_PRICE_AMOUNT
+        FROM DW_ANALYTICS.FACT.SHOPIFY_ORDERS_RD_ORDERS o, bounds b
+        WHERE o.BRAND = ?
+          AND o.SOURCE_NAME = 'web'
+          AND (o.IS_FAIRE_ORDER = FALSE OR o.IS_FAIRE_ORDER IS NULL)
+          AND o.CREATED_AT >= b.prior_start
+          AND o.CREATED_AT < b.today_start
+          AND SPLIT_PART(o.LANDING_SITE, '?', 1) IN (SELECT path FROM watched)
+      ),
+      aggregates AS (
+        SELECT
+          w.path AS landing_path,
+          COALESCE(SUM(IFF(c.CREATED_AT >= b.current_start, 1, 0)), 0) AS current_count,
+          COALESCE(SUM(IFF(c.CREATED_AT >= b.current_start, c.TOTAL_PRICE_AMOUNT, 0)), 0) AS current_revenue,
+          COALESCE(SUM(IFF(c.CREATED_AT < b.current_start, c.TOTAL_PRICE_AMOUNT, 0)), 0) AS prior_revenue
+        FROM watched w
+        LEFT JOIN classified c ON c.landing_path = w.path
+        , bounds b
+        GROUP BY w.path
+      ),
+      daily AS (
+        SELECT
+          c.landing_path,
+          TO_VARCHAR(DATE(c.CREATED_AT), 'YYYY-MM-DD') AS d,
+          SUM(c.TOTAL_PRICE_AMOUNT) AS v
+        FROM classified c, bounds b
+        WHERE c.CREATED_AT >= b.current_start
+        GROUP BY c.landing_path, DATE(c.CREATED_AT)
+      ),
+      sparklines AS (
+        SELECT
+          landing_path,
+          ARRAY_AGG(OBJECT_CONSTRUCT('d', d, 'v', v)) WITHIN GROUP (ORDER BY d) AS daily_series
+        FROM daily
+        GROUP BY landing_path
+      )
+      SELECT
+        a.landing_path AS KEY,
+        a.landing_path AS LABEL,
+        NULL AS SUBLABEL,
+        a.current_revenue AS CURRENT_REVENUE,
+        a.prior_revenue AS PRIOR_REVENUE,
+        a.current_count AS CURRENT_COUNT,
+        TO_VARCHAR(s.daily_series) AS DAILY_JSON
+      FROM aggregates a
+      LEFT JOIN sparklines s ON a.landing_path = s.landing_path
+      ORDER BY a.current_revenue DESC NULLS LAST
+    `,
+    [period, period * 2, ...watched, brand],
+  );
+  return rows.map((r) => toRow(r, 'orders'));
+}
 
 export async function getLandingPages(brand: Brand, period: Period): Promise<Layer2Row[]> {
   const rows = await execute<RawRow>(
@@ -275,10 +353,16 @@ export async function getChannelAttribution(
   return rows.map((r) => toRow(r, 'orders'));
 }
 
-export type Layer2Tab = 'landing' | 'products' | 'attribution';
-export const LAYER2_TABS: readonly Layer2Tab[] = ['landing', 'products', 'attribution'] as const;
+export type Layer2Tab = 'watched' | 'landing' | 'products' | 'attribution';
+export const LAYER2_TABS: readonly Layer2Tab[] = [
+  'watched',
+  'landing',
+  'products',
+  'attribution',
+] as const;
 
 export const LAYER2_LABELS: Record<Layer2Tab, string> = {
+  watched: 'Watched Pages',
   landing: 'Landing Pages',
   products: 'Top Products',
   attribution: 'Channel Attribution',
@@ -287,7 +371,7 @@ export const LAYER2_LABELS: Record<Layer2Tab, string> = {
 export function parseLayer2Tab(raw: unknown): Layer2Tab {
   return (LAYER2_TABS as readonly string[]).includes(raw as string)
     ? (raw as Layer2Tab)
-    : 'landing';
+    : 'watched';
 }
 
 export async function getLayer2(
@@ -296,6 +380,8 @@ export async function getLayer2(
   tab: Layer2Tab,
 ): Promise<Layer2Row[]> {
   switch (tab) {
+    case 'watched':
+      return getWatchedPages(brand, period);
     case 'landing':
       return getLandingPages(brand, period);
     case 'products':

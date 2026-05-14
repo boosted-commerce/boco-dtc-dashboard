@@ -469,10 +469,12 @@ function Layer2Table({
   rows,
   metricNoun,
   emptyMessage,
+  period,
 }: {
   rows: Layer2Row[];
   metricNoun: 'orders' | 'units' | 'orders attributed';
   emptyMessage: string;
+  period: Period;
 }) {
   if (rows.length === 0) {
     return (
@@ -487,7 +489,7 @@ function Layer2Table({
           <th className="px-5 py-2 text-right font-medium">{metricNoun}</th>
           <th className="px-5 py-2 text-right font-medium">Revenue</th>
           <th className="px-5 py-2 text-right font-medium">vs prior</th>
-          <th className="px-5 py-2 font-medium">28-day trend</th>
+          <th className="px-5 py-2 font-medium">{period}-day trend</th>
           <th className="px-5 py-2 font-medium">Direction</th>
         </tr>
       </thead>
@@ -591,6 +593,7 @@ export default async function Home({
     getLayer2(brand, period, tab),
   ]);
   const metricNounByTab: Record<Layer2Tab, 'orders' | 'units' | 'orders attributed'> = {
+    watched: 'orders',
     landing: 'orders',
     products: 'units',
     attribution: 'orders attributed',
@@ -719,6 +722,7 @@ export default async function Home({
             rows={layer2Rows}
             metricNoun={metricNounByTab[tab]}
             emptyMessage={`No ${LAYER2_LABELS[tab].toLowerCase()} data in this period for ${brand}.`}
+            period={period}
           />
         </section>
 
