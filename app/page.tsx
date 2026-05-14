@@ -13,6 +13,14 @@ import {
   type SubBucket,
   type TopSubProduct,
 } from '@/lib/queries/orders';
+import {
+  getLayer2,
+  LAYER2_LABELS,
+  LAYER2_TABS,
+  parseLayer2Tab,
+  type Layer2Row,
+  type Layer2Tab,
+} from '@/lib/queries/layer2';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -215,12 +223,20 @@ function PillTabs<T extends string | number>({
   active,
   hrefFor,
   ariaLabel,
+  labelFor,
+  preserveScroll = false,
 }: {
   items: readonly T[];
   active: T;
   hrefFor: (item: T) => string;
   ariaLabel: string;
+  labelFor?: (item: T) => string;
+  preserveScroll?: boolean;
 }) {
+  const renderLabel = (item: T) => {
+    if (labelFor) return labelFor(item);
+    return `${String(item)}${typeof item === 'number' ? ' days' : ''}`;
+  };
   return (
     <div
       role="tablist"
@@ -233,6 +249,7 @@ function PillTabs<T extends string | number>({
           <Link
             key={String(item)}
             href={hrefFor(item)}
+            scroll={!preserveScroll}
             role="tab"
             aria-selected={isActive}
             className={`rounded-full px-3 py-1 transition ${
@@ -241,8 +258,7 @@ function PillTabs<T extends string | number>({
                 : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'
             }`}
           >
-            {String(item)}
-            {typeof item === 'number' ? ' days' : ''}
+            {renderLabel(item)}
           </Link>
         );
       })}
@@ -421,6 +437,102 @@ function ChannelMix({
   );
 }
 
+function trendTagFor(current: number, prior: number) {
+  const pct = pctChange(current, prior);
+  if (pct === null) {
+    return {
+      label: 'new',
+      className: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400',
+    };
+  }
+  const abs = Math.abs(pct);
+  if (abs < 5) {
+    return {
+      label: '→ stable',
+      className: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400',
+    };
+  }
+  if (pct > 0) {
+    return {
+      label: '↑ trending up',
+      className:
+        'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400',
+    };
+  }
+  return {
+    label: '↓ watch',
+    className: 'bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-400',
+  };
+}
+
+function Layer2Table({
+  rows,
+  metricNoun,
+  emptyMessage,
+}: {
+  rows: Layer2Row[];
+  metricNoun: 'orders' | 'units' | 'orders attributed';
+  emptyMessage: string;
+}) {
+  if (rows.length === 0) {
+    return (
+      <div className="p-6 text-sm text-zinc-500 dark:text-zinc-400">{emptyMessage}</div>
+    );
+  }
+  return (
+    <table className="w-full text-sm">
+      <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wider text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
+        <tr>
+          <th className="px-5 py-2 font-medium">Name</th>
+          <th className="px-5 py-2 text-right font-medium">{metricNoun}</th>
+          <th className="px-5 py-2 text-right font-medium">Revenue</th>
+          <th className="px-5 py-2 text-right font-medium">vs prior</th>
+          <th className="px-5 py-2 font-medium">28-day trend</th>
+          <th className="px-5 py-2 font-medium">Direction</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => {
+          const tag = trendTagFor(r.currentRevenue, r.priorRevenue);
+          return (
+            <tr key={r.key} className="border-t border-zinc-100 dark:border-zinc-800">
+              <td className="max-w-md truncate px-5 py-3 text-zinc-900 dark:text-zinc-100">
+                <div className="truncate font-medium">{r.label}</div>
+                {r.sublabel && (
+                  <div className="truncate text-xs text-zinc-500 dark:text-zinc-400">
+                    {r.sublabel}
+                  </div>
+                )}
+              </td>
+              <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
+                {r.currentCount.toLocaleString()}
+              </td>
+              <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
+                ${r.currentRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              </td>
+              <td className="px-5 py-3 text-right tabular-nums">
+                <MiniTrend current={r.currentRevenue} prior={r.priorRevenue} />
+              </td>
+              <td className="px-5 py-3">
+                <div className="w-32 text-emerald-600 dark:text-emerald-400">
+                  <Sparkline points={r.daily} height={28} />
+                </div>
+              </td>
+              <td className="px-5 py-3">
+                <span
+                  className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${tag.className}`}
+                >
+                  {tag.label}
+                </span>
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
 function TopProductsTable({ rows }: { rows: TopSubProduct[] }) {
   if (rows.length === 0) {
     return (
@@ -468,33 +580,44 @@ function TopProductsTable({ rows }: { rows: TopSubProduct[] }) {
 export default async function Home({
   searchParams,
 }: {
-  searchParams: Promise<{ period?: string; brand?: string }>;
+  searchParams: Promise<{ period?: string; brand?: string; tab?: string }>;
 }) {
   const sp = await searchParams;
   const period = parsePeriod(sp.period);
   const brand = parseBrand(sp.brand);
-  const data = await getStoreOverview(brand, period);
+  const tab = parseLayer2Tab(sp.tab);
+  const [data, layer2Rows] = await Promise.all([
+    getStoreOverview(brand, period),
+    getLayer2(brand, period, tab),
+  ]);
+  const metricNounByTab: Record<Layer2Tab, 'orders' | 'units' | 'orders attributed'> = {
+    landing: 'orders',
+    products: 'units',
+    attribution: 'orders attributed',
+  };
 
   return (
     <main className="min-h-screen bg-zinc-50 px-6 py-10 dark:bg-black">
       <div className="mx-auto max-w-6xl">
-        <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-4">
+        <header className="sticky top-0 z-20 -mx-6 mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 bg-zinc-50/85 px-6 py-3 backdrop-blur dark:border-zinc-800 dark:bg-black/85">
+          <div className="flex flex-wrap items-center gap-4">
             <h1 className="text-xl font-semibold uppercase tracking-wider text-zinc-700 dark:text-zinc-300">
               Store Trends
             </h1>
             <PillTabs<Brand>
               items={BRANDS}
               active={brand}
-              hrefFor={(b) => `/?brand=${b}&period=${period}`}
+              hrefFor={(b) => `/?brand=${b}&period=${period}&tab=${tab}`}
               ariaLabel="Select brand"
+              preserveScroll
             />
           </div>
           <PillTabs<Period>
             items={PERIODS}
             active={period}
-            hrefFor={(p) => `/?brand=${brand}&period=${p}`}
+            hrefFor={(p) => `/?brand=${brand}&period=${p}&tab=${tab}`}
             ariaLabel="Select period"
+            preserveScroll
           />
         </header>
 
@@ -571,6 +694,32 @@ export default async function Home({
 
         <section className="mb-6">
           <TopProductsTable rows={data.topSubscriptionProducts} />
+        </section>
+
+        <section className="mb-6 overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
+            <div>
+              <div className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                Pages, Products &amp; Sources
+              </div>
+              <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                Top 25 by revenue · DTC orders only · click-through coming with Layer 3
+              </div>
+            </div>
+            <PillTabs<Layer2Tab>
+              items={LAYER2_TABS}
+              active={tab}
+              hrefFor={(t) => `/?brand=${brand}&period=${period}&tab=${t}`}
+              ariaLabel="Select layer 2 tab"
+              labelFor={(t) => LAYER2_LABELS[t]}
+              preserveScroll
+            />
+          </div>
+          <Layer2Table
+            rows={layer2Rows}
+            metricNoun={metricNounByTab[tab]}
+            emptyMessage={`No ${LAYER2_LABELS[tab].toLowerCase()} data in this period for ${brand}.`}
+          />
         </section>
 
         <footer className="text-xs text-zinc-400 dark:text-zinc-500">
