@@ -1,6 +1,6 @@
 import { execute } from '@/lib/snowflake';
 import type { Brand, DailyPoint, Period } from '@/lib/queries/orders';
-import { WATCHED_PAGES } from '@/lib/watched-pages';
+import { getWatchedPaths } from '@/lib/watched-store';
 
 // Layer 2 — page-/product-/source-level tables below Level 1. Each function
 // returns the top N rows for the selected period with a daily-revenue series
@@ -54,7 +54,7 @@ const toRow = (r: RawRow, countNoun: 'orders' | 'units'): Layer2Row => ({
 });
 
 export async function getWatchedPages(brand: Brand, period: Period): Promise<Layer2Row[]> {
-  const watched = WATCHED_PAGES[brand] ?? [];
+  const watched = await getWatchedPaths(brand);
   if (watched.length === 0) return [];
   // LEFT JOIN against a watched(path) virtual table so pages with no orders
   // in the period still render (as $0 rows) — that's signal too, not noise.

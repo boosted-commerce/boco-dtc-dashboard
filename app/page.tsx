@@ -24,6 +24,9 @@ import {
   type Layer2Row,
   type Layer2Tab,
 } from '@/lib/queries/layer2';
+import { getWatchedPaths } from '@/lib/watched-store';
+import { StarButton } from '@/app/_components/star-button';
+import { AddWatchedInput } from '@/app/_components/add-watched-input';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -473,11 +476,17 @@ function Layer2Table({
   metricNoun,
   emptyMessage,
   period,
+  brand,
+  watchedSet,
+  starrable,
 }: {
   rows: Layer2Row[];
   metricNoun: 'orders' | 'units' | 'orders attributed';
   emptyMessage: string;
   period: Period;
+  brand: Brand;
+  watchedSet: Set<string>;
+  starrable: boolean;
 }) {
   if (rows.length === 0) {
     return (
@@ -488,6 +497,7 @@ function Layer2Table({
     <table className="w-full text-sm">
       <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wider text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
         <tr>
+          {starrable && <th className="w-10 px-3 py-2 font-medium" aria-label="Star" />}
           <th className="px-5 py-2 font-medium">Name</th>
           <th className="px-5 py-2 text-right font-medium">{metricNoun}</th>
           <th className="px-5 py-2 text-right font-medium">Revenue</th>
@@ -501,6 +511,15 @@ function Layer2Table({
           const tag = trendTagFor(r.currentRevenue, r.priorRevenue);
           return (
             <tr key={r.key} className="border-t border-zinc-100 dark:border-zinc-800">
+              {starrable && (
+                <td className="px-3 py-3">
+                  <StarButton
+                    brand={brand}
+                    path={r.key}
+                    initialStarred={watchedSet.has(r.key)}
+                  />
+                </td>
+              )}
               <td className="max-w-md truncate px-5 py-3 text-zinc-900 dark:text-zinc-100">
                 <div className="truncate font-medium">{r.label}</div>
                 {r.sublabel && (
@@ -597,10 +616,13 @@ export default async function Home({
   const brand = parseBrand(sp.brand);
   const tab = parseLayer2Tab(sp.tab);
   const source = parseSource(sp.source);
-  const [data, layer2Rows] = await Promise.all([
+  const [data, layer2Rows, watchedPaths] = await Promise.all([
     getStoreOverview(brand, period, source),
     getLayer2(brand, period, tab),
+    getWatchedPaths(brand),
   ]);
+  const watchedSet = new Set(watchedPaths);
+  const starrableTabs: ReadonlySet<Layer2Tab> = new Set(['watched', 'pdps', 'collections', 'cms']);
   const metricNounByTab: Record<Layer2Tab, 'orders' | 'units' | 'orders attributed'> = {
     watched: 'orders',
     pdps: 'orders',
@@ -747,11 +769,22 @@ export default async function Home({
               />
             </div>
           </div>
+          {tab === 'watched' && (
+            <div className="border-b border-zinc-200 bg-zinc-50/50 px-5 py-3 dark:border-zinc-800 dark:bg-zinc-900/30">
+              <div className="mb-1.5 text-[11px] uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                Add a page to watch — paste any URL or path
+              </div>
+              <AddWatchedInput brand={brand} />
+            </div>
+          )}
           <Layer2Table
             rows={layer2Rows}
             metricNoun={metricNounByTab[tab]}
             emptyMessage={`No ${LAYER2_LABELS[tab].toLowerCase()} data in this period for ${brand}.`}
             period={period}
+            brand={brand}
+            watchedSet={watchedSet}
+            starrable={starrableTabs.has(tab)}
           />
         </section>
 
