@@ -4,12 +4,15 @@ import {
   getStoreOverview,
   parseBrand,
   parsePeriod,
+  parseSource,
   PERIODS,
+  SOURCES,
   type Brand,
   type Bucket,
   type ChannelMix as ChannelMixData,
   type DailyPoint,
   type Period,
+  type SourceFilter,
   type SubBucket,
   type TopSubProduct,
 } from '@/lib/queries/orders';
@@ -582,19 +585,27 @@ function TopProductsTable({ rows }: { rows: TopSubProduct[] }) {
 export default async function Home({
   searchParams,
 }: {
-  searchParams: Promise<{ period?: string; brand?: string; tab?: string }>;
+  searchParams: Promise<{
+    period?: string;
+    brand?: string;
+    tab?: string;
+    source?: string;
+  }>;
 }) {
   const sp = await searchParams;
   const period = parsePeriod(sp.period);
   const brand = parseBrand(sp.brand);
   const tab = parseLayer2Tab(sp.tab);
+  const source = parseSource(sp.source);
   const [data, layer2Rows] = await Promise.all([
-    getStoreOverview(brand, period),
+    getStoreOverview(brand, period, source),
     getLayer2(brand, period, tab),
   ]);
   const metricNounByTab: Record<Layer2Tab, 'orders' | 'units' | 'orders attributed'> = {
     watched: 'orders',
-    landing: 'orders',
+    pdps: 'orders',
+    collections: 'orders',
+    cms: 'orders',
     products: 'units',
     attribution: 'orders attributed',
   };
@@ -610,18 +621,28 @@ export default async function Home({
             <PillTabs<Brand>
               items={BRANDS}
               active={brand}
-              hrefFor={(b) => `/?brand=${b}&period=${period}&tab=${tab}`}
+              hrefFor={(b) => `/?brand=${b}&period=${period}&tab=${tab}&source=${source}`}
               ariaLabel="Select brand"
               preserveScroll
             />
           </div>
-          <PillTabs<Period>
-            items={PERIODS}
-            active={period}
-            hrefFor={(p) => `/?brand=${brand}&period=${p}&tab=${tab}`}
-            ariaLabel="Select period"
-            preserveScroll
-          />
+          <div className="flex flex-wrap items-center gap-3">
+            <PillTabs<SourceFilter>
+              items={SOURCES}
+              active={source}
+              hrefFor={(s) => `/?brand=${brand}&period=${period}&tab=${tab}&source=${s}`}
+              ariaLabel="Filter sales channels"
+              labelFor={(s) => (s === 'all' ? 'All channels' : 'DTC only')}
+              preserveScroll
+            />
+            <PillTabs<Period>
+              items={PERIODS}
+              active={period}
+              hrefFor={(p) => `/?brand=${brand}&period=${p}&tab=${tab}&source=${source}`}
+              ariaLabel="Select period"
+              preserveScroll
+            />
+          </div>
         </header>
 
         <section className="mb-6 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950">
@@ -706,7 +727,7 @@ export default async function Home({
                 Pages, Products &amp; Sources
               </div>
               <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                Top 25 by revenue · DTC orders only · click-through coming with Layer 3
+                DTC orders only · top 100 by revenue · click-through coming with Layer 3
               </div>
             </div>
             <div className="flex items-center gap-3">

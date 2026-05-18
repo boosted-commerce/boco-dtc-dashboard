@@ -247,7 +247,9 @@ export default async function Level2Page({
   const rows = await getLayer2(brand, period, tab);
   const metricNounByTab: Record<Layer2Tab, 'orders' | 'units' | 'orders attributed'> = {
     watched: 'orders',
-    landing: 'orders',
+    pdps: 'orders',
+    collections: 'orders',
+    cms: 'orders',
     products: 'units',
     attribution: 'orders attributed',
   };
@@ -288,7 +290,7 @@ export default async function Level2Page({
                 {LAYER2_LABELS[tab]}
               </div>
               <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                Top {tab === 'watched' ? 'pages on the watch list' : '25 by revenue'} ·
+                {tab === 'watched' ? 'pages on the watch list' : 'top 100 by revenue'} ·
                 DTC orders only · {brand}
               </div>
             </div>

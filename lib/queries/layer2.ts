@@ -9,7 +9,7 @@ import { WATCHED_PAGES } from '@/lib/watched-pages';
 // = the N days before that.
 
 const n = (v: unknown) => Number(v ?? 0);
-const TOP_LIMIT = 25;
+const TOP_LIMIT = 100;
 
 export type Layer2Row = {
   key: string;
@@ -130,7 +130,14 @@ ${watchedCte}
   return rows.map((r) => toRow(r, 'orders'));
 }
 
-export async function getLandingPages(brand: Brand, period: Period): Promise<Layer2Row[]> {
+// Pages filtered by URL pattern (e.g. '/products/%' for PDPs, '/collections/%'
+// for collections, '/pages/%' for CMS landing pages). Returns top-by-revenue
+// in the selected period with daily-revenue sparklines per row.
+async function getPagesByType(
+  brand: Brand,
+  period: Period,
+  pathPattern: string,
+): Promise<Layer2Row[]> {
   const rows = await execute<RawRow>(
     `
       WITH bounds AS (
@@ -151,6 +158,7 @@ export async function getLandingPages(brand: Brand, period: Period): Promise<Lay
           AND o.CREATED_AT >= b.prior_start
           AND o.CREATED_AT < b.today_start
           AND o.LANDING_SITE IS NOT NULL
+          AND SPLIT_PART(o.LANDING_SITE, '?', 1) LIKE ?
           AND o.LANDING_SITE NOT LIKE '%/online_store_preview%'
           AND o.LANDING_SITE NOT LIKE '%/checkouts/sessions/clone%'
           AND o.LANDING_SITE NOT LIKE '%/cart/update.js%'
@@ -196,10 +204,17 @@ export async function getLandingPages(brand: Brand, period: Period): Promise<Lay
       LEFT JOIN sparklines s USING (landing_path)
       ORDER BY a.current_revenue DESC NULLS LAST
     `,
-    [period, period * 2, brand],
+    [period, period * 2, brand, pathPattern],
   );
   return rows.map((r) => toRow(r, 'orders'));
 }
+
+export const getPDPs = (brand: Brand, period: Period) =>
+  getPagesByType(brand, period, '/products/%');
+export const getCollections = (brand: Brand, period: Period) =>
+  getPagesByType(brand, period, '/collections/%');
+export const getCMSPages = (brand: Brand, period: Period) =>
+  getPagesByType(brand, period, '/pages/%');
 
 export async function getTopProductsBySales(
   brand: Brand,
@@ -353,17 +368,27 @@ export async function getChannelAttribution(
   return rows.map((r) => toRow(r, 'orders'));
 }
 
-export type Layer2Tab = 'watched' | 'landing' | 'products' | 'attribution';
+export type Layer2Tab =
+  | 'watched'
+  | 'pdps'
+  | 'collections'
+  | 'cms'
+  | 'products'
+  | 'attribution';
 export const LAYER2_TABS: readonly Layer2Tab[] = [
   'watched',
-  'landing',
+  'pdps',
+  'collections',
+  'cms',
   'products',
   'attribution',
 ] as const;
 
 export const LAYER2_LABELS: Record<Layer2Tab, string> = {
-  watched: 'Watched Pages',
-  landing: 'Landing Pages',
+  watched: 'Watched',
+  pdps: 'PDPs',
+  collections: 'Collections',
+  cms: 'CMS Pages',
   products: 'Top Products',
   attribution: 'Channel Attribution',
 };
@@ -382,8 +407,12 @@ export async function getLayer2(
   switch (tab) {
     case 'watched':
       return getWatchedPages(brand, period);
-    case 'landing':
-      return getLandingPages(brand, period);
+    case 'pdps':
+      return getPDPs(brand, period);
+    case 'collections':
+      return getCollections(brand, period);
+    case 'cms':
+      return getCMSPages(brand, period);
     case 'products':
       return getTopProductsBySales(brand, period);
     case 'attribution':

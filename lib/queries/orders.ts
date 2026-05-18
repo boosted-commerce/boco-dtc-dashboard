@@ -15,6 +15,18 @@ export function parseBrand(raw: unknown): Brand {
   return (BRANDS as readonly string[]).includes(raw as string) ? (raw as Brand) : 'ASN';
 }
 
+// Sales-channel filter. 'all' = every channel (current behavior), 'dtc' =
+// Shopify Online Store only (SOURCE_NAME='web'). Subscription metrics are
+// already web-scoped so this only affects Orders / Revenue / AOV.
+export const SOURCES = ['all', 'dtc'] as const;
+export type SourceFilter = (typeof SOURCES)[number];
+
+export function parseSource(raw: unknown): SourceFilter {
+  return (SOURCES as readonly string[]).includes(raw as string)
+    ? (raw as SourceFilter)
+    : 'all';
+}
+
 export type DailyPoint = { date: string; value: number };
 
 export type Bucket = {
@@ -54,6 +66,7 @@ export type ChannelMix = {
 export type StoreOverview = {
   brand: Brand;
   period: Period;
+  source: SourceFilter;
   channelMix: ChannelMix;
   orders: Bucket;
   revenue: Bucket;
@@ -91,7 +104,12 @@ type ShopifyAggRow = {
   WEB_REV_PRIOR: number | string | null;
 };
 
-async function getShopifyAggregates(brand: Brand, period: Period) {
+async function getShopifyAggregates(
+  brand: Brand,
+  period: Period,
+  source: SourceFilter,
+) {
+  const sourceFilter = source === 'dtc' ? "AND o.SOURCE_NAME = 'web'" : '';
   const rows = await execute<ShopifyAggRow>(
     `
       WITH bounds AS (
@@ -124,6 +142,7 @@ async function getShopifyAggregates(brand: Brand, period: Period) {
         AND o.CREATED_AT >= b.year_ago_start
         AND o.CREATED_AT < b.today_start
         AND (o.IS_FAIRE_ORDER = FALSE OR o.IS_FAIRE_ORDER IS NULL)
+        ${sourceFilter}
     `,
     [period, period * 2, 365 + period, brand],
   );
@@ -138,7 +157,12 @@ type DailyRow = {
   TOTAL_REV: number | string | null;
 };
 
-async function getShopifyDaily(brand: Brand, period: Period): Promise<DailyRow[]> {
+async function getShopifyDaily(
+  brand: Brand,
+  period: Period,
+  source: SourceFilter,
+): Promise<DailyRow[]> {
+  const sourceFilter = source === 'dtc' ? "AND SOURCE_NAME = 'web'" : '';
   return execute<DailyRow>(
     `
       SELECT
@@ -152,6 +176,7 @@ async function getShopifyDaily(brand: Brand, period: Period): Promise<DailyRow[]
         AND CREATED_AT >= DATEADD(day, -?, DATE_TRUNC('day', CURRENT_TIMESTAMP()))
         AND CREATED_AT < DATE_TRUNC('day', CURRENT_TIMESTAMP())
         AND (IS_FAIRE_ORDER = FALSE OR IS_FAIRE_ORDER IS NULL)
+        ${sourceFilter}
       GROUP BY DATE(CREATED_AT)
       ORDER BY DATE(CREATED_AT)
     `,
@@ -338,10 +363,11 @@ async function getChannelMix(brand: Brand, period: Period): Promise<ChannelMix> 
 export async function getStoreOverview(
   brand: Brand = 'ASN',
   period: Period = 28,
+  source: SourceFilter = 'all',
 ): Promise<StoreOverview> {
   const [agg, daily, rechargeAgg, rechargeDaily, topProducts, channelMix] = await Promise.all([
-    getShopifyAggregates(brand, period),
-    getShopifyDaily(brand, period),
+    getShopifyAggregates(brand, period, source),
+    getShopifyDaily(brand, period, source),
     getRechargeAggregates(brand, period),
     getRechargeDaily(brand, period),
     getTopSubscriptionProducts(brand, period),
@@ -451,6 +477,7 @@ export async function getStoreOverview(
   return {
     brand,
     period,
+    source,
     channelMix,
     orders,
     revenue,
