@@ -47,19 +47,20 @@ export async function GET(request: NextRequest) {
     const redirectUri = `${request.nextUrl.origin}/api/shopify/callback`;
     const authorizeUrl = buildAuthorizeUrl({ shop, scopes: SCOPES, redirectUri, state });
 
-    const res = Response.redirect(authorizeUrl, 302);
-    // Mirror the state in a cookie too — callback validates the HMAC, the
-    // cookie is a belt-and-suspenders check that the same browser session
-    // initiated the install.
-    res.headers.append(
+    // Build the redirect Response manually because Response.redirect()
+    // returns an immutable headers object. We need to set Set-Cookie
+    // alongside Location, which requires the standard Response constructor.
+    const headers = new Headers();
+    headers.set('location', authorizeUrl);
+    headers.append(
       'Set-Cookie',
       `shopify_oauth_state=${state}; Path=/; HttpOnly; SameSite=Lax; Max-Age=600`,
     );
-    res.headers.append(
+    headers.append(
       'Set-Cookie',
       `shopify_oauth_shop=${shop}; Path=/; HttpOnly; SameSite=Lax; Max-Age=600`,
     );
-    return res;
+    return new Response(null, { status: 302, headers });
   } catch (err) {
     // Surface the underlying cause rather than letting Next.js swallow it
     // as an empty 500 body. Common case: SHOPIFY_APP_API_KEY missing.
