@@ -1,0 +1,62 @@
+import { type NextRequest } from 'next/server';
+import crypto from 'node:crypto';
+import { BRANDS, type Brand } from '@/lib/queries/orders';
+import { buildAuthorizeUrl, normalizeShopDomain } from '@/lib/shopify-oauth';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+// Required scopes for ShopifyQL Analytics + order/report reads.
+const SCOPES = 'read_analytics,read_orders,read_reports';
+
+// State cookie carries the brand identifier so the callback can associate
+// the issued token with the right brand. The HMAC over the nonce + brand
+// prevents forgery.
+function signState(payload: { brand: Brand; nonce: string }): string {
+  const secret = process.env.SHOPIFY_APP_API_SECRET ?? '';
+  const message = `${payload.brand}.${payload.nonce}`;
+  const sig = crypto.createHmac('sha256', secret).update(message).digest('hex');
+  return `${message}.${sig}`;
+}
+
+export async function GET(request: NextRequest) {
+  const sp = request.nextUrl.searchParams;
+  const brandRaw = (sp.get('brand') ?? '').toUpperCase();
+  const shopRaw = sp.get('shop') ?? '';
+
+  if (!(BRANDS as readonly string[]).includes(brandRaw)) {
+    return Response.json(
+      { error: `brand must be one of ${BRANDS.join(', ')}` },
+      { status: 400 },
+    );
+  }
+  const brand = brandRaw as Brand;
+
+  const shop = normalizeShopDomain(shopRaw);
+  if (!shop) {
+    return Response.json(
+      { error: 'shop must be a valid myshopify.com subdomain' },
+      { status: 400 },
+    );
+  }
+
+  const nonce = crypto.randomBytes(16).toString('hex');
+  const state = signState({ brand, nonce });
+
+  const redirectUri = `${request.nextUrl.origin}/api/shopify/callback`;
+  const authorizeUrl = buildAuthorizeUrl({ shop, scopes: SCOPES, redirectUri, state });
+
+  const res = Response.redirect(authorizeUrl, 302);
+  // Mirror the state in a cookie too — callback validates the HMAC, the
+  // cookie is a belt-and-suspenders check that the same browser session
+  // initiated the install.
+  res.headers.append(
+    'Set-Cookie',
+    `shopify_oauth_state=${state}; Path=/; HttpOnly; SameSite=Lax; Max-Age=600`,
+  );
+  res.headers.append(
+    'Set-Cookie',
+    `shopify_oauth_shop=${shop}; Path=/; HttpOnly; SameSite=Lax; Max-Age=600`,
+  );
+  return res;
+}

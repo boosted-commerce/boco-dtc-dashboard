@@ -99,3 +99,41 @@ export function normalizePathInput(raw: string): string | null {
   if (/\s/.test(v)) return null;
   return v;
 }
+
+// --- Shopify per-brand OAuth token storage ---
+// One token + shop pair per brand, written by the OAuth callback and read
+// by the ShopifyQL client.
+
+const shopifyTokenKey = (brand: Brand) => `shopify:${brand}:token`;
+const shopifyShopKey = (brand: Brand) => `shopify:${brand}:shop`;
+
+export async function saveShopifyCredentials(
+  brand: Brand,
+  shop: string,
+  accessToken: string,
+): Promise<void> {
+  const redis = getRedis();
+  if (!redis) throw new Error('KV not configured');
+  await Promise.all([
+    redis.set(shopifyShopKey(brand), shop),
+    redis.set(shopifyTokenKey(brand), accessToken),
+  ]);
+}
+
+export async function getShopifyCredentials(
+  brand: Brand,
+): Promise<{ shop: string; token: string } | null> {
+  const redis = getRedis();
+  if (!redis) return null;
+  try {
+    const [shop, token] = await Promise.all([
+      redis.get<string>(shopifyShopKey(brand)),
+      redis.get<string>(shopifyTokenKey(brand)),
+    ]);
+    if (!shop || !token) return null;
+    return { shop, token };
+  } catch (err) {
+    console.error('shopify creds read failed', err);
+    return null;
+  }
+}
