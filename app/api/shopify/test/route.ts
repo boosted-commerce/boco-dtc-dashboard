@@ -39,7 +39,10 @@ export async function GET(request: NextRequest) {
           'X-Shopify-Access-Token': creds.token,
         },
         body: JSON.stringify({
-          query: `query { shopifyqlQuery(query: ${JSON.stringify(query)}) { __typename } }`,
+          query: `query { shopifyqlQuery(query: ${JSON.stringify(query)}) {
+            parseErrors { code message }
+            tableData { columns { name dataType displayName } rowData unformattedData }
+          } }`,
         }),
       },
     );
