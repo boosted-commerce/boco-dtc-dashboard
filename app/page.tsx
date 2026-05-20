@@ -730,7 +730,8 @@ export default async function Home({
 
         <ChannelMix data={data.channelMix} period={data.period} />
 
-        <section className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-3 xl:grid-cols-6">
+        {/* Row 1: Funnel — Sessions, Conv Rate, Orders */}
+        <section className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-3">
           {data.sessions && (
             <MetricCard
               title="Sessions"
@@ -753,6 +754,10 @@ export default async function Home({
             kind="count"
             sparklineColor="text-emerald-600 dark:text-emerald-400"
           />
+        </section>
+
+        {/* Row 2: Revenue & monetization */}
+        <section className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-3">
           <MetricCard
             title="Revenue"
             bucket={data.revenue}
@@ -773,6 +778,7 @@ export default async function Home({
           />
         </section>
 
+        {/* Row 3: Subscription business */}
         <section className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
           <MetricCard
             title="Subscription Revenue"
