@@ -710,15 +710,17 @@ export default async function Home({
         <section className="mb-6 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950">
           <div className="mb-3 flex items-center justify-between">
             <div className="text-sm font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-              This month&rsquo;s story
+              Last {period} days · story
             </div>
             <div className="text-xs text-zinc-400 dark:text-zinc-500">
               AI narrative — pending sessions data
             </div>
           </div>
           <p className="text-zinc-600 dark:text-zinc-400">
-            The daily AI narrative will appear here once sessions and customer-event data land in
-            Snowflake. Today&rsquo;s view shows the order-side and subscription metrics we have.
+            The AI narrative for the last {period} days will appear here once
+            sessions and customer-event data land in Snowflake.
+            Today&rsquo;s view shows the order-side and subscription metrics
+            we have over this window.
           </p>
           <div className="mt-4 border-t border-zinc-100 pt-3 text-sm text-zinc-700 dark:border-zinc-800 dark:text-zinc-300">
             <span className="font-semibold">Yesterday</span> ·{' '}
