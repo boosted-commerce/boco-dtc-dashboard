@@ -294,7 +294,7 @@ async function getTopSubscriptionProducts(
         AND TO_TIMESTAMP(PROCESSED_AT) < DATE_TRUNC('day', CURRENT_TIMESTAMP())
       GROUP BY LINE_ITEMS_TITLE
       ORDER BY NEW_SUBSCRIPTIONS DESC
-      LIMIT 10
+      LIMIT 5
     `,
     [brand, period],
   );

@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -sS \"https://boco-dtc-dashboard.vercel.app/?brand=ASN&period=28&tab=attribution\" -o /tmp/p.html)"
+    ]
+  }
+}
