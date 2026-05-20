@@ -479,6 +479,7 @@ function Layer2Table({
   brand,
   watchedSet,
   starrable,
+  showSessions,
 }: {
   rows: Layer2Row[];
   metricNoun: 'orders' | 'units' | 'orders attributed';
@@ -487,6 +488,7 @@ function Layer2Table({
   brand: Brand;
   watchedSet: Set<string>;
   starrable: boolean;
+  showSessions: boolean;
 }) {
   if (rows.length === 0) {
     return (
@@ -499,6 +501,8 @@ function Layer2Table({
         <tr>
           {starrable && <th className="w-10 px-3 py-2 font-medium" aria-label="Star" />}
           <th className="px-5 py-2 font-medium">Name</th>
+          {showSessions && <th className="px-5 py-2 text-right font-medium">Sessions</th>}
+          {showSessions && <th className="px-5 py-2 text-right font-medium">Conv rate</th>}
           <th className="px-5 py-2 text-right font-medium">{metricNoun}</th>
           <th className="px-5 py-2 text-right font-medium">Revenue</th>
           <th className="px-5 py-2 text-right font-medium">vs prior</th>
@@ -528,6 +532,20 @@ function Layer2Table({
                   </div>
                 )}
               </td>
+              {showSessions && (
+                <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
+                  {r.sessions !== undefined
+                    ? r.sessions.toLocaleString()
+                    : <span className="text-zinc-400 dark:text-zinc-500">—</span>}
+                </td>
+              )}
+              {showSessions && (
+                <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
+                  {r.convRate !== undefined
+                    ? `${r.convRate.toFixed(2)}%`
+                    : <span className="text-zinc-400 dark:text-zinc-500">—</span>}
+                </td>
+              )}
               <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
                 {r.currentCount.toLocaleString()}
               </td>
@@ -785,6 +803,7 @@ export default async function Home({
             brand={brand}
             watchedSet={watchedSet}
             starrable={starrableTabs.has(tab)}
+            showSessions={starrableTabs.has(tab)}
           />
         </section>
 

@@ -1,6 +1,7 @@
 import { execute } from '@/lib/snowflake';
 import type { Brand, DailyPoint, Period } from '@/lib/queries/orders';
 import { getWatchedPaths } from '@/lib/watched-store';
+import { getSessionsByPath } from '@/lib/shopify';
 
 // Layer 2 — page-/product-/source-level tables below Level 1. Each function
 // returns the top N rows for the selected period with a daily-revenue series
@@ -20,6 +21,11 @@ export type Layer2Row = {
   currentCount: number;
   countNoun: 'orders' | 'units';
   daily: DailyPoint[];
+  // Optional ShopifyQL-sourced session metrics. Undefined for rows whose
+  // key isn't a path (e.g. Top Products by Sales uses product titles) or
+  // brands without a Shopify install.
+  sessions?: number;
+  convRate?: number; // percent (0-100)
 };
 
 type RawRow = {
@@ -399,7 +405,33 @@ export function parseLayer2Tab(raw: unknown): Layer2Tab {
     : 'watched';
 }
 
+// Tabs whose rows are keyed on landing paths (so we can enrich with
+// ShopifyQL session data). Top Products (product titles) and Channel
+// Attribution (utm sources) are not path-keyed.
+const PATH_KEYED_TABS: ReadonlySet<Layer2Tab> = new Set([
+  'watched',
+  'pdps',
+  'collections',
+  'cms',
+]);
+
 export async function getLayer2(
+  brand: Brand,
+  period: Period,
+  tab: Layer2Tab,
+): Promise<Layer2Row[]> {
+  const [rows, sessions] = await Promise.all([
+    getLayer2RowsInner(brand, period, tab),
+    PATH_KEYED_TABS.has(tab) ? getSessionsByPath(brand, period) : Promise.resolve(new Map()),
+  ]);
+  if (sessions.size === 0) return rows;
+  return rows.map((r) => {
+    const s = sessions.get(r.key);
+    return s ? { ...r, sessions: s.sessions, convRate: s.convRate } : r;
+  });
+}
+
+async function getLayer2RowsInner(
   brand: Brand,
   period: Period,
   tab: Layer2Tab,
