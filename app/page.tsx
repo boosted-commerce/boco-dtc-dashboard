@@ -850,6 +850,16 @@ export default async function Home({
             showSessions={starrableTabs.has(tab) || tab === 'attribution'}
             showRevenue={tab !== 'attribution'}
           />
+          {starrableTabs.has(tab) && layer2Rows.length > 0 && (
+            <div className="border-t border-zinc-100 bg-zinc-50/50 px-5 py-3 text-[11px] text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/30 dark:text-zinc-400">
+              <span className="font-medium">Reading this table:</span> Sessions
+              and Conv Rate measure same-session conversion. Orders / Revenue
+              attribute to a customer&rsquo;s first-touch entry page, so a row
+              with 0% conv but orders &gt; 0 is a top-of-funnel discovery page
+              (visitors land, leave, later convert elsewhere). Sub = subscription
+              orders that don&rsquo;t generate sessions.
+            </div>
+          )}
         </section>
 
         <footer className="text-xs text-zinc-400 dark:text-zinc-500">
