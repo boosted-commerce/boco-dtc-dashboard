@@ -231,6 +231,7 @@ function PillTabs<T extends string | number>({
   ariaLabel,
   labelFor,
   preserveScroll = false,
+  accent,
 }: {
   items: readonly T[];
   active: T;
@@ -238,6 +239,10 @@ function PillTabs<T extends string | number>({
   ariaLabel: string;
   labelFor?: (item: T) => string;
   preserveScroll?: boolean;
+  // Optionally style one specific item with different colors (used for
+  // visually distinguishing tabs that are categorically different — e.g.
+  // Channel Attribution among the page-data tabs).
+  accent?: { item: T; activeClass: string; inactiveClass: string };
 }) {
   const renderLabel = (item: T) => {
     if (labelFor) return labelFor(item);
@@ -251,6 +256,13 @@ function PillTabs<T extends string | number>({
     >
       {items.map((item) => {
         const isActive = item === active;
+        const isAccent = accent?.item === item;
+        const activeCls = isAccent
+          ? accent!.activeClass
+          : 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900';
+        const inactiveCls = isAccent
+          ? accent!.inactiveClass
+          : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100';
         return (
           <Link
             key={String(item)}
@@ -259,9 +271,7 @@ function PillTabs<T extends string | number>({
             role="tab"
             aria-selected={isActive}
             className={`rounded-full px-3 py-1 transition ${
-              isActive
-                ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
-                : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'
+              isActive ? activeCls : inactiveCls
             }`}
           >
             {renderLabel(item)}
@@ -823,7 +833,7 @@ export default async function Home({
                   : 'DTC orders only · top 100 by revenue · click-through coming with Layer 3'}
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-3">
               <Link
                 href={`/level-2?brand=${brand}&period=${period}&tab=${tab}`}
                 className="hidden text-xs text-zinc-500 underline hover:text-zinc-900 sm:inline dark:text-zinc-400 dark:hover:text-zinc-100"
@@ -831,21 +841,19 @@ export default async function Home({
                 Open as separate page →
               </Link>
               <PillTabs<Layer2Tab>
-                items={LAYER2_TABS.filter((t) => t !== 'attribution')}
+                items={LAYER2_TABS}
                 active={tab}
                 hrefFor={(t) => `/?brand=${brand}&period=${period}&tab=${t}`}
-                ariaLabel="Select page-data tab"
+                ariaLabel="Select layer 2 tab"
                 labelFor={(t) => LAYER2_LABELS[t]}
                 preserveScroll
-              />
-              <span className="mx-1 h-5 w-px bg-zinc-300 dark:bg-zinc-700" aria-hidden="true" />
-              <PillTabs<Layer2Tab>
-                items={['attribution']}
-                active={tab}
-                hrefFor={(t) => `/?brand=${brand}&period=${period}&tab=${t}`}
-                ariaLabel="Select attribution tab"
-                labelFor={(t) => LAYER2_LABELS[t]}
-                preserveScroll
+                accent={{
+                  item: 'attribution',
+                  activeClass:
+                    'bg-amber-500 text-white dark:bg-amber-500 dark:text-zinc-900',
+                  inactiveClass:
+                    'bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-950/60',
+                }}
               />
             </div>
           </div>
