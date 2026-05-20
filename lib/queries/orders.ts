@@ -1,4 +1,5 @@
 import { execute } from '@/lib/snowflake';
+import { getSessionTimeSeries, type SessionDailyPoint } from '@/lib/shopify';
 
 export type Period = 7 | 28 | 90;
 export const PERIODS: readonly Period[] = [7, 28, 90] as const;
@@ -76,6 +77,10 @@ export type StoreOverview = {
   recurringRevenue: Bucket;
   newSubscriptions: SubBucket;
   topSubscriptionProducts: TopSubProduct[];
+  // ShopifyQL-sourced. Null when the brand has no Shopify install yet
+  // (graceful degrade — Layer 1 still renders the Snowflake-backed cards).
+  sessions: Bucket | null;
+  convRate: Bucket | null;
 };
 
 const n = (v: unknown) => Number(v ?? 0);
@@ -360,19 +365,104 @@ async function getChannelMix(brand: Brand, period: Period): Promise<ChannelMix> 
   return { channels, totalCurrent, totalPrior };
 }
 
+// Compute a Bucket from a daily SessionDailyPoint series. The window
+// boundaries match the calendar-day pattern used for every other Bucket:
+// current ends at start-of-today (excludes in-progress today).
+function bucketFromTimeSeries(
+  series: SessionDailyPoint[],
+  period: Period,
+  metric: 'sessions' | 'convRate',
+): Bucket {
+  // Today (exclusive end) — we don't include today's partial data so the
+  // bucket aligns with the Snowflake-derived cards.
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  const dayInMs = 24 * 60 * 60 * 1000;
+  const todayMs = today.getTime();
+  const offset = (n: number) => new Date(todayMs - n * dayInMs).toISOString().slice(0, 10);
+
+  // Build a date -> data map for fast lookups.
+  const byDate = new Map<string, SessionDailyPoint>();
+  for (const p of series) byDate.set(p.date, p);
+
+  // Window aggregator. Sums sessions + ordersImplied between [from, to)
+  // (date strings compared lexicographically — YYYY-MM-DD sorts correctly).
+  const sum = (from: string, to: string) => {
+    let sessions = 0;
+    let orders = 0;
+    for (const p of series) {
+      if (p.date >= from && p.date < to) {
+        sessions += p.sessions;
+        orders += p.ordersImplied;
+      }
+    }
+    return { sessions, orders };
+  };
+
+  const value = (windowSessions: number, windowOrders: number): number => {
+    if (metric === 'sessions') return windowSessions;
+    return windowSessions > 0 ? (windowOrders / windowSessions) * 100 : 0;
+  };
+
+  const todayStr = offset(0);
+  const currentStart = offset(period);
+  const priorStart = offset(period * 2);
+  const yesterdayStart = offset(1);
+  const sevenDayStart = offset(7);
+  const yearAgoEnd = offset(365);
+  const yearAgoStart = offset(365 + period);
+
+  const current = sum(currentStart, todayStr);
+  const prior = sum(priorStart, currentStart);
+  const yesterday = sum(yesterdayStart, todayStr);
+  const sevenDay = sum(sevenDayStart, todayStr);
+  const yearAgo = sum(yearAgoStart, yearAgoEnd);
+
+  const daily: DailyPoint[] = [];
+  for (let i = period - 1; i >= 0; i--) {
+    const d = offset(i + 1);
+    const p = byDate.get(d);
+    if (p) {
+      daily.push({
+        date: d,
+        value:
+          metric === 'sessions'
+            ? p.sessions
+            : p.sessions > 0
+              ? (p.ordersImplied / p.sessions) * 100
+              : 0,
+      });
+    } else {
+      daily.push({ date: d, value: 0 });
+    }
+  }
+
+  return {
+    current: value(current.sessions, current.orders),
+    prior: value(prior.sessions, prior.orders),
+    yesterday: value(yesterday.sessions, yesterday.orders),
+    sevenDayTotal: value(sevenDay.sessions, sevenDay.orders),
+    yearAgo: value(yearAgo.sessions, yearAgo.orders),
+    daily,
+  };
+}
+
 export async function getStoreOverview(
   brand: Brand = 'ASN',
   period: Period = 28,
   source: SourceFilter = 'all',
 ): Promise<StoreOverview> {
-  const [agg, daily, rechargeAgg, rechargeDaily, topProducts, channelMix] = await Promise.all([
-    getShopifyAggregates(brand, period, source),
-    getShopifyDaily(brand, period, source),
-    getRechargeAggregates(brand, period),
-    getRechargeDaily(brand, period),
-    getTopSubscriptionProducts(brand, period),
-    getChannelMix(brand, period),
-  ]);
+  const [agg, daily, rechargeAgg, rechargeDaily, topProducts, channelMix, sessionSeries] =
+    await Promise.all([
+      getShopifyAggregates(brand, period, source),
+      getShopifyDaily(brand, period, source),
+      getRechargeAggregates(brand, period),
+      getRechargeDaily(brand, period),
+      getTopSubscriptionProducts(brand, period),
+      getChannelMix(brand, period),
+      // Pull ~year-back daily series so all comparison windows can be derived.
+      getSessionTimeSeries(brand, 365 + period),
+    ]);
 
   const ordersDaily: DailyPoint[] = daily.map((r) => ({ date: r.D, value: n(r.ORDERS) }));
   const revenueDaily: DailyPoint[] = daily.map((r) => ({ date: r.D, value: n(r.REVENUE) }));
@@ -474,6 +564,11 @@ export async function getStoreOverview(
     daily: newSubsDaily,
   };
 
+  const sessions =
+    sessionSeries.length > 0 ? bucketFromTimeSeries(sessionSeries, period, 'sessions') : null;
+  const convRate =
+    sessionSeries.length > 0 ? bucketFromTimeSeries(sessionSeries, period, 'convRate') : null;
+
   return {
     brand,
     period,
@@ -487,5 +582,7 @@ export async function getStoreOverview(
     recurringRevenue,
     newSubscriptions,
     topSubscriptionProducts: topProducts,
+    sessions,
+    convRate,
   };
 }

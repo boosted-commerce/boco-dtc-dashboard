@@ -161,6 +161,38 @@ export type ChannelSessionRow = {
   priorSessions: number;
 };
 
+// Daily sessions + conversion-rate timeseries from ShopifyQL. One query
+// covers the entire year-back window so the Layer 1 cards can derive
+// every comparison bucket (current / prior / yesterday / 7-day / year ago)
+// in JS without N additional API calls.
+export type SessionDailyPoint = {
+  date: string; // YYYY-MM-DD
+  sessions: number;
+  // Orders implied for this day (sessions × conv_rate). Re-summed across
+  // a window to compute weighted conv rate without averaging percents.
+  ordersImplied: number;
+};
+
+export async function getSessionTimeSeries(
+  brand: Brand,
+  days: number,
+): Promise<SessionDailyPoint[]> {
+  const tableData = await runShopifyQL(
+    brand,
+    `FROM sessions SHOW sessions, conversion_rate TIMESERIES day SINCE -${days}d UNTIL today ORDER BY day`,
+  );
+  if (!tableData) return [];
+  return tableData.rows.map((r) => {
+    const sessions = Number(r.sessions) || 0;
+    const convRateDec = Number(r.conversion_rate) || 0;
+    return {
+      date: String(r.day ?? '').slice(0, 10),
+      sessions,
+      ordersImplied: sessions * convRateDec,
+    };
+  });
+}
+
 export async function getChannelSessions(
   brand: Brand,
   period: Period,

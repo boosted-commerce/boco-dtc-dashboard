@@ -722,7 +722,23 @@ export default async function Home({
 
         <ChannelMix data={data.channelMix} period={data.period} />
 
-        <section className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-4">
+        <section className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-3 xl:grid-cols-6">
+          {data.sessions && (
+            <MetricCard
+              title="Sessions"
+              bucket={data.sessions}
+              kind="count"
+              sparklineColor="text-sky-600 dark:text-sky-400"
+            />
+          )}
+          {data.convRate && (
+            <MetricCard
+              title="Conv Rate"
+              bucket={data.convRate}
+              kind="percent"
+              sparklineColor="text-sky-600 dark:text-sky-400"
+            />
+          )}
           <MetricCard
             title="Orders"
             bucket={data.orders}
