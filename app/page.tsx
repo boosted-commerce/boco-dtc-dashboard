@@ -825,15 +825,9 @@ export default async function Home({
           Layer 2 · Pages, Products &amp; Sources
         </h2>
         <section className="mb-6 overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
-            <div>
-              <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                {tab === 'attribution'
-                  ? 'Traffic sources · session-level data from ShopifyQL · top 10 by volume (expand for more)'
-                  : 'DTC orders only · top 100 by revenue · click-through coming with Layer 3'}
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
+          <div className="border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
+            {/* Top row: tabs anchored right, doesn't shift with subtitle text changes */}
+            <div className="flex items-center justify-end gap-3">
               <Link
                 href={`/level-2?brand=${brand}&period=${period}&tab=${tab}`}
                 className="hidden text-xs text-zinc-500 underline hover:text-zinc-900 sm:inline dark:text-zinc-400 dark:hover:text-zinc-100"
@@ -855,6 +849,12 @@ export default async function Home({
                     'bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-950/60',
                 }}
               />
+            </div>
+            {/* Subtitle on its own row below — text length differences between tabs can't push the tab strip around */}
+            <div className="mt-2 text-[11px] text-zinc-500 dark:text-zinc-400">
+              {tab === 'attribution'
+                ? 'Traffic sources · session-level data from ShopifyQL · top 10 by volume (expand for more)'
+                : 'DTC orders only · top 100 by revenue · click-through coming with Layer 3'}
             </div>
           </div>
           {tab === 'watched' && (
