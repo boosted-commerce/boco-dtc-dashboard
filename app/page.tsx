@@ -818,10 +818,12 @@ export default async function Home({
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
             <div>
               <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                DTC orders only · top 100 by revenue · click-through coming with Layer 3
+                {tab === 'attribution'
+                  ? 'Traffic sources · session-level data from ShopifyQL · top 10 by volume (expand for more)'
+                  : 'DTC orders only · top 100 by revenue · click-through coming with Layer 3'}
               </div>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-2">
               <Link
                 href={`/level-2?brand=${brand}&period=${period}&tab=${tab}`}
                 className="hidden text-xs text-zinc-500 underline hover:text-zinc-900 sm:inline dark:text-zinc-400 dark:hover:text-zinc-100"
@@ -829,10 +831,19 @@ export default async function Home({
                 Open as separate page →
               </Link>
               <PillTabs<Layer2Tab>
-                items={LAYER2_TABS}
+                items={LAYER2_TABS.filter((t) => t !== 'attribution')}
                 active={tab}
                 hrefFor={(t) => `/?brand=${brand}&period=${period}&tab=${t}`}
-                ariaLabel="Select layer 2 tab"
+                ariaLabel="Select page-data tab"
+                labelFor={(t) => LAYER2_LABELS[t]}
+                preserveScroll
+              />
+              <span className="mx-1 h-5 w-px bg-zinc-300 dark:bg-zinc-700" aria-hidden="true" />
+              <PillTabs<Layer2Tab>
+                items={['attribution']}
+                active={tab}
+                hrefFor={(t) => `/?brand=${brand}&period=${period}&tab=${t}`}
+                ariaLabel="Select attribution tab"
                 labelFor={(t) => LAYER2_LABELS[t]}
                 preserveScroll
               />
