@@ -22,14 +22,15 @@ function verifyState(state: string | null, cookieState: string | null): {
   const parts = state.split('.');
   if (parts.length !== 3) return { ok: false, reason: 'malformed state' };
   const [brand, nonce, sig] = parts;
+  if (!(BRANDS as readonly string[]).includes(brand)) return { ok: false, reason: 'bad brand' };
+  // Use the brand-specific secret (each brand has its own Shopify app).
   const expected = crypto
-    .createHmac('sha256', shopifyApiSecret())
+    .createHmac('sha256', shopifyApiSecret(brand as Brand))
     .update(`${brand}.${nonce}`)
     .digest('hex');
   if (sig.length !== expected.length) return { ok: false, reason: 'state sig length' };
   const ok = crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
   if (!ok) return { ok: false, reason: 'state sig invalid' };
-  if (!(BRANDS as readonly string[]).includes(brand)) return { ok: false, reason: 'bad brand' };
   return { ok: true, brand: brand as Brand };
 }
 
@@ -50,21 +51,22 @@ function htmlResponse(body: string, status = 200): Response {
 export async function GET(request: NextRequest) {
   const sp = request.nextUrl.searchParams;
 
-  // 1. HMAC validation — confirms this callback really came from Shopify.
-  if (!verifyHmac(sp, shopifyApiSecret())) {
-    return htmlResponse(
-      `<h1 class="err">Install failed</h1><p>HMAC validation failed. Try the install link again.</p>`,
-      400,
-    );
-  }
-
-  // 2. State validation — confirms same browser session.
+  // 1. State validation FIRST — we need to know which brand to look up the
+  // right secret. HMAC validation immediately after with that secret.
   const cookieMatch = request.headers.get('cookie')?.match(/shopify_oauth_state=([^;]+)/);
   const state = sp.get('state');
   const { ok, brand, reason } = verifyState(state, cookieMatch?.[1] ?? null);
   if (!ok || !brand) {
     return htmlResponse(
       `<h1 class="err">Install failed</h1><p>State validation failed (${reason}). Try the install link again.</p>`,
+      400,
+    );
+  }
+
+  // 2. HMAC validation — confirms this callback really came from Shopify.
+  if (!verifyHmac(sp, shopifyApiSecret(brand))) {
+    return htmlResponse(
+      `<h1 class="err">Install failed</h1><p>HMAC validation failed. Try the install link again.</p>`,
       400,
     );
   }
@@ -90,7 +92,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const { access_token, scope } = await exchangeCodeForToken({ shop, code });
+    const { access_token, scope } = await exchangeCodeForToken({ brand, shop, code });
     await saveShopifyCredentials(brand, shop, access_token);
     return htmlResponse(
       `<h1 class="ok">✓ Installed for ${brand}</h1>

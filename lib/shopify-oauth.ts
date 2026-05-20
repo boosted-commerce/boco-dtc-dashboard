@@ -1,19 +1,28 @@
 import crypto from 'node:crypto';
+import type { Brand } from '@/lib/queries/orders';
 
 // Shopify OAuth helpers. Server-side only.
 
 export const SHOPIFY_API_VERSION = '2026-04';
 
-export function shopifyApiSecret(): string {
-  const v = process.env.SHOPIFY_APP_API_SECRET;
-  if (!v) throw new Error('SHOPIFY_APP_API_SECRET not configured');
-  return v;
+// Each brand has its own Shopify app (their stores are in separate orgs
+// and Shopify enforces same-org install restrictions). We read per-brand
+// credentials from `SHOPIFY_APP_API_KEY_<BRAND>` / `_SECRET_<BRAND>`, with
+// the un-suffixed name as a transition-period fallback.
+function envFor(prefix: 'SHOPIFY_APP_API_KEY' | 'SHOPIFY_APP_API_SECRET', brand: Brand): string {
+  const suffixed = process.env[`${prefix}_${brand}`];
+  if (suffixed) return suffixed;
+  const fallback = process.env[prefix];
+  if (fallback) return fallback;
+  throw new Error(`${prefix}_${brand} (or ${prefix}) not configured`);
 }
 
-export function shopifyApiKey(): string {
-  const v = process.env.SHOPIFY_APP_API_KEY;
-  if (!v) throw new Error('SHOPIFY_APP_API_KEY not configured');
-  return v;
+export function shopifyApiSecret(brand: Brand): string {
+  return envFor('SHOPIFY_APP_API_SECRET', brand);
+}
+
+export function shopifyApiKey(brand: Brand): string {
+  return envFor('SHOPIFY_APP_API_KEY', brand);
 }
 
 // Validate the canonical .myshopify.com subdomain format. Shopify expects
@@ -29,15 +38,18 @@ export function normalizeShopDomain(input: string): string | null {
 
 // Build the OAuth authorize URL that Shopify redirects the user to. After
 // the merchant grants permissions, Shopify redirects to redirectUri with
-// ?code=... which we exchange for an offline access token.
+// ?code=... which we exchange for an offline access token. Caller must
+// pass the brand-specific client_id since each brand has its own Shopify
+// app.
 export function buildAuthorizeUrl(opts: {
+  brand: Brand;
   shop: string; // full myshopify.com domain
   scopes: string;
   redirectUri: string;
   state: string;
 }): string {
   const url = new URL(`https://${opts.shop}/admin/oauth/authorize`);
-  url.searchParams.set('client_id', shopifyApiKey());
+  url.searchParams.set('client_id', shopifyApiKey(opts.brand));
   url.searchParams.set('scope', opts.scopes);
   url.searchParams.set('redirect_uri', opts.redirectUri);
   url.searchParams.set('state', opts.state);
@@ -72,6 +84,7 @@ export function verifyHmac(params: URLSearchParams, secret: string): boolean {
 // Exchange the temp `code` from the callback for a long-lived offline
 // access token. The token is what we'll use to call Admin GraphQL.
 export async function exchangeCodeForToken(opts: {
+  brand: Brand;
   shop: string;
   code: string;
 }): Promise<{ access_token: string; scope: string }> {
@@ -79,8 +92,8 @@ export async function exchangeCodeForToken(opts: {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      client_id: shopifyApiKey(),
-      client_secret: shopifyApiSecret(),
+      client_id: shopifyApiKey(opts.brand),
+      client_secret: shopifyApiSecret(opts.brand),
       code: opts.code,
     }),
   });

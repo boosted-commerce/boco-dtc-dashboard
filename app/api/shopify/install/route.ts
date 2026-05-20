@@ -13,7 +13,11 @@ const SCOPES = 'read_analytics,read_orders,read_reports';
 // the issued token with the right brand. The HMAC over the nonce + brand
 // prevents forgery.
 function signState(payload: { brand: Brand; nonce: string }): string {
-  const secret = process.env.SHOPIFY_APP_API_SECRET ?? '';
+  // Per-brand secret since each brand has its own Shopify app.
+  const secret =
+    process.env[`SHOPIFY_APP_API_SECRET_${payload.brand}`] ??
+    process.env.SHOPIFY_APP_API_SECRET ??
+    '';
   const message = `${payload.brand}.${payload.nonce}`;
   const sig = crypto.createHmac('sha256', secret).update(message).digest('hex');
   return `${message}.${sig}`;
@@ -45,7 +49,7 @@ export async function GET(request: NextRequest) {
     const state = signState({ brand, nonce });
 
     const redirectUri = `${request.nextUrl.origin}/api/shopify/callback`;
-    const authorizeUrl = buildAuthorizeUrl({ shop, scopes: SCOPES, redirectUri, state });
+    const authorizeUrl = buildAuthorizeUrl({ brand, shop, scopes: SCOPES, redirectUri, state });
 
     // Build the redirect Response manually because Response.redirect()
     // returns an immutable headers object. We need to set Set-Cookie
