@@ -649,6 +649,7 @@ export default async function Home({
     brand?: string;
     tab?: string;
     source?: string;
+    expanded?: string;
   }>;
 }) {
   const sp = await searchParams;
@@ -656,6 +657,7 @@ export default async function Home({
   const brand = parseBrand(sp.brand);
   const tab = parseLayer2Tab(sp.tab);
   const source = parseSource(sp.source);
+  const expanded = sp.expanded === 'true';
   const [data, layer2Rows, watchedPaths] = await Promise.all([
     getStoreOverview(brand, period, source),
     getLayer2(brand, period, tab),
@@ -845,7 +847,7 @@ export default async function Home({
             </div>
           )}
           <Layer2Table
-            rows={layer2Rows}
+            rows={tab === 'attribution' && !expanded ? layer2Rows.slice(0, 10) : layer2Rows}
             metricNoun={metricNounByTab[tab]}
             emptyMessage={`No ${LAYER2_LABELS[tab].toLowerCase()} data in this period for ${brand}.`}
             period={period}
@@ -855,6 +857,19 @@ export default async function Home({
             showSessions={starrableTabs.has(tab) || tab === 'attribution'}
             showRevenue={tab !== 'attribution'}
           />
+          {tab === 'attribution' && layer2Rows.length > 10 && (
+            <div className="flex justify-center border-t border-zinc-100 bg-zinc-50/50 px-5 py-3 dark:border-zinc-800 dark:bg-zinc-900/30">
+              <Link
+                href={`/?brand=${brand}&period=${period}&tab=${tab}&source=${source}${expanded ? '' : '&expanded=true'}`}
+                scroll={false}
+                className="text-xs font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+              >
+                {expanded
+                  ? '↑ Show top 10'
+                  : `↓ Show all ${layer2Rows.length} sources`}
+              </Link>
+            </div>
+          )}
           {starrableTabs.has(tab) && layer2Rows.length > 0 && (
             <div className="border-t border-zinc-100 bg-zinc-50/50 px-5 py-3 text-[11px] text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/30 dark:text-zinc-400">
               <span className="font-medium">Reading this table:</span> Sessions
