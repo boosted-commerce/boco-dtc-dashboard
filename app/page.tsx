@@ -506,6 +506,7 @@ function Layer2Table({
           {showSessions && <th className="px-5 py-2 text-right font-medium">Sessions</th>}
           {showSessions && <th className="px-5 py-2 text-right font-medium">Conv rate</th>}
           <th className="px-5 py-2 text-right font-medium">{metricNoun}</th>
+          {showRevenue && <th className="px-5 py-2 text-right font-medium">Sub</th>}
           {showRevenue && <th className="px-5 py-2 text-right font-medium">Revenue</th>}
           <th className="px-5 py-2 text-right font-medium">vs prior</th>
           {showRevenue && (
@@ -559,6 +560,13 @@ function Layer2Table({
               <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
                 {r.currentCount.toLocaleString()}
               </td>
+              {showRevenue && (
+                <td className="px-5 py-3 text-right tabular-nums text-zinc-500 dark:text-zinc-400">
+                  {r.subCount !== undefined && r.subCount > 0
+                    ? `+${r.subCount.toLocaleString()}`
+                    : <span className="text-zinc-300 dark:text-zinc-600">—</span>}
+                </td>
+              )}
               {showRevenue && (
                 <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
                   ${r.currentRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}

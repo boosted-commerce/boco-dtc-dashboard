@@ -21,6 +21,10 @@ export type Layer2Row = {
   currentCount: number;
   countNoun: 'orders' | 'units';
   daily: DailyPoint[];
+  // Optional: subscription-flagged order count (IS_SUBSCRIPTION = TRUE).
+  // Pulled out so the main `currentCount` is comparable to Shopify's
+  // session-based conv rate (subscriptions / renewals don't have sessions).
+  subCount?: number;
   // Optional ShopifyQL-sourced session metrics. Undefined for rows whose
   // key isn't a path (e.g. Top Products by Sales uses product titles) or
   // brands without a Shopify install.
@@ -36,6 +40,7 @@ type RawRow = {
   CURRENT_REVENUE: number | string | null;
   PRIOR_REVENUE: number | string | null;
   CURRENT_COUNT: number | string | null;
+  CURRENT_SUB_COUNT: number | string | null;
   DAILY_JSON: string | null;
 };
 
@@ -56,6 +61,9 @@ const toRow = (r: RawRow, countNoun: 'orders' | 'units'): Layer2Row => ({
   currentRevenue: n(r.CURRENT_REVENUE),
   priorRevenue: n(r.PRIOR_REVENUE),
   currentCount: n(r.CURRENT_COUNT),
+  subCount: r.CURRENT_SUB_COUNT !== undefined && r.CURRENT_SUB_COUNT !== null
+    ? n(r.CURRENT_SUB_COUNT)
+    : undefined,
   countNoun,
   daily: parseDaily(r.DAILY_JSON),
 });
@@ -84,7 +92,8 @@ ${watchedCte}
         SELECT
           SPLIT_PART(o.LANDING_SITE, '?', 1) AS landing_path,
           o.CREATED_AT,
-          o.TOTAL_PRICE_AMOUNT
+          o.TOTAL_PRICE_AMOUNT,
+          COALESCE(o.IS_SUBSCRIPTION, FALSE) AS is_subscription
         FROM DW_ANALYTICS.FACT.SHOPIFY_ORDERS_RD_ORDERS o, bounds b
         WHERE o.BRAND = ?
           AND o.SOURCE_NAME = 'web'
@@ -96,7 +105,8 @@ ${watchedCte}
       aggregates AS (
         SELECT
           w.path AS landing_path,
-          COALESCE(SUM(IFF(c.CREATED_AT >= b.current_start, 1, 0)), 0) AS current_count,
+          COALESCE(SUM(IFF(c.CREATED_AT >= b.current_start AND NOT c.is_subscription, 1, 0)), 0) AS current_count,
+          COALESCE(SUM(IFF(c.CREATED_AT >= b.current_start AND c.is_subscription, 1, 0)), 0) AS current_sub_count,
           COALESCE(SUM(IFF(c.CREATED_AT >= b.current_start, c.TOTAL_PRICE_AMOUNT, 0)), 0) AS current_revenue,
           COALESCE(SUM(IFF(c.CREATED_AT < b.current_start, c.TOTAL_PRICE_AMOUNT, 0)), 0) AS prior_revenue
         FROM watched w
@@ -127,6 +137,7 @@ ${watchedCte}
         a.current_revenue AS CURRENT_REVENUE,
         a.prior_revenue AS PRIOR_REVENUE,
         a.current_count AS CURRENT_COUNT,
+        a.current_sub_count AS CURRENT_SUB_COUNT,
         TO_VARCHAR(s.daily_series) AS DAILY_JSON
       FROM aggregates a
       LEFT JOIN sparklines s ON a.landing_path = s.landing_path
@@ -157,7 +168,8 @@ async function getPagesByType(
         SELECT
           SPLIT_PART(o.LANDING_SITE, '?', 1) AS landing_path,
           o.CREATED_AT,
-          o.TOTAL_PRICE_AMOUNT
+          o.TOTAL_PRICE_AMOUNT,
+          COALESCE(o.IS_SUBSCRIPTION, FALSE) AS is_subscription
         FROM DW_ANALYTICS.FACT.SHOPIFY_ORDERS_RD_ORDERS o, bounds b
         WHERE o.BRAND = ?
           AND o.SOURCE_NAME = 'web'
@@ -173,7 +185,11 @@ async function getPagesByType(
       aggregates AS (
         SELECT
           c.landing_path,
-          SUM(IFF(c.CREATED_AT >= b.current_start, 1, 0)) AS current_count,
+          -- One-time / first-purchase orders (comparable to session conv rate)
+          SUM(IFF(c.CREATED_AT >= b.current_start AND NOT c.is_subscription, 1, 0)) AS current_count,
+          -- Subscription orders (sign-ups + renewals). Renewals don't generate
+          -- sessions so we surface them separately to keep conv rate sensible.
+          SUM(IFF(c.CREATED_AT >= b.current_start AND c.is_subscription, 1, 0)) AS current_sub_count,
           SUM(IFF(c.CREATED_AT >= b.current_start, c.TOTAL_PRICE_AMOUNT, 0)) AS current_revenue,
           SUM(IFF(c.CREATED_AT < b.current_start, c.TOTAL_PRICE_AMOUNT, 0)) AS prior_revenue
         FROM classified c, bounds b
@@ -206,6 +222,7 @@ async function getPagesByType(
         a.current_revenue AS CURRENT_REVENUE,
         a.prior_revenue AS PRIOR_REVENUE,
         a.current_count AS CURRENT_COUNT,
+        a.current_sub_count AS CURRENT_SUB_COUNT,
         TO_VARCHAR(s.daily_series) AS DAILY_JSON
       FROM aggregates a
       LEFT JOIN sparklines s USING (landing_path)
