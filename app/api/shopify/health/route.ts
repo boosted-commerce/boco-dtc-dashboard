@@ -6,6 +6,7 @@ export const dynamic = 'force-dynamic';
 
 // Lightweight env-presence probe for debugging the OAuth wiring. Reports
 // whether each expected env var is set (does NOT reveal values).
+// Probe extended to surface PRL credentials once they were added.
 export async function GET(_request: NextRequest) {
   // Per-brand Shopify credentials (each brand has its own Shopify app).
   const perBrand: Record<string, { key: boolean; secret: boolean }> = {};
