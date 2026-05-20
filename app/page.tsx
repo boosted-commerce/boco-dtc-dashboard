@@ -800,16 +800,19 @@ export default async function Home({
           />
         </section>
 
+        <h2 className="mt-10 mb-3 text-xl font-semibold uppercase tracking-wider text-zinc-700 dark:text-zinc-300">
+          Layer 1 · Subscription Highlights
+        </h2>
         <section className="mb-6">
           <TopProductsTable rows={data.topSubscriptionProducts} />
         </section>
 
+        <h2 className="mt-10 mb-3 text-xl font-semibold uppercase tracking-wider text-zinc-700 dark:text-zinc-300">
+          Layer 2 · Pages, Products &amp; Sources
+        </h2>
         <section className="mb-6 overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
             <div>
-              <div className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                Pages, Products &amp; Sources
-              </div>
               <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
                 DTC orders only · top 100 by revenue · click-through coming with Layer 3
               </div>
