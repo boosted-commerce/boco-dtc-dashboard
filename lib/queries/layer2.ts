@@ -1,7 +1,7 @@
 import { execute } from '@/lib/snowflake';
 import type { Brand, DailyPoint, Period } from '@/lib/queries/orders';
 import { getWatchedPaths } from '@/lib/watched-store';
-import { getSessionsByPath } from '@/lib/shopify';
+import { getChannelSessions, getSessionsByPath } from '@/lib/shopify';
 
 // Layer 2 — page-/product-/source-level tables below Level 1. Each function
 // returns the top N rows for the selected period with a daily-revenue series
@@ -26,6 +26,7 @@ export type Layer2Row = {
   // brands without a Shopify install.
   sessions?: number;
   convRate?: number; // percent (0-100)
+  priorSessions?: number; // for sessions-based trend on attribution rows
 };
 
 type RawRow = {
@@ -295,7 +296,43 @@ export async function getTopProductsBySales(
   return rows.map((r) => toRow(r, 'units'));
 }
 
+// ShopifyQL-sourced Channel Attribution. Replaces the previous
+// order-based UTM extraction from LANDING_SITE. Big win: campaigns with
+// zero conversions still show up here (e.g. "facebook · ASN | Copper
+// Peptides | US | ABO | Testing | 2026" with 484 sessions and 0% conv
+// that was invisible before because the order-side query had nothing to
+// extract from).
 export async function getChannelAttribution(
+  brand: Brand,
+  period: Period,
+): Promise<Layer2Row[]> {
+  const channels = await getChannelSessions(brand, period);
+  if (channels.length > 0) {
+    return channels.map((c) => {
+      const ordersAttributed = Math.round(c.sessions * (c.convRate / 100));
+      const labelSource = c.source || '(none)';
+      const fullLabel = c.name ? `${labelSource} · ${c.name}` : labelSource;
+      return {
+        key: `${labelSource}|${c.name}`,
+        label: fullLabel,
+        currentRevenue: 0,
+        priorRevenue: 0,
+        currentCount: ordersAttributed,
+        countNoun: 'orders' as const,
+        daily: [],
+        sessions: c.sessions,
+        convRate: c.convRate,
+        priorSessions: c.priorSessions,
+      };
+    });
+  }
+  // Fall through to the legacy order-based UTM extraction if ShopifyQL
+  // isn't available for this brand (no install or API outage). Keeps the
+  // tab usable in degraded mode.
+  return getChannelAttributionFromOrders(brand, period);
+}
+
+async function getChannelAttributionFromOrders(
   brand: Brand,
   period: Period,
 ): Promise<Layer2Row[]> {

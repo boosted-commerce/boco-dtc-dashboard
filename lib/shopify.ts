@@ -146,3 +146,56 @@ export async function getBrandSessions(
   const convRateDecimal = Number(row.conversion_rate) || 0;
   return { sessions, convRate: convRateDecimal * 100 };
 }
+
+// Sessions broken down by traffic source + campaign. ShopifyQL's
+// referrer_source maps to utm_source (e.g. "facebook", "google",
+// "(direct)") and referrer_name maps to utm_campaign (e.g. "ASN | Copper
+// Peptides | US | ABO | Testing | 2026") — so a single Meta campaign
+// shows as its own row, which the order-based attribution can't see when
+// the campaign has zero conversions.
+export type ChannelSessionRow = {
+  source: string;
+  name: string;
+  sessions: number;
+  convRate: number; // percent
+  priorSessions: number;
+};
+
+export async function getChannelSessions(
+  brand: Brand,
+  period: Period,
+): Promise<ChannelSessionRow[]> {
+  const [current, prior] = await Promise.all([
+    runShopifyQL(
+      brand,
+      `FROM sessions SHOW sessions, conversion_rate GROUP BY referrer_source, referrer_name SINCE -${period}d UNTIL today ORDER BY sessions DESC LIMIT 50`,
+    ),
+    runShopifyQL(
+      brand,
+      `FROM sessions SHOW sessions GROUP BY referrer_source, referrer_name SINCE -${period * 2}d UNTIL -${period}d ORDER BY sessions DESC LIMIT 100`,
+    ),
+  ]);
+
+  if (!current) return [];
+
+  const priorMap = new Map<string, number>();
+  if (prior) {
+    for (const r of prior.rows) {
+      const source = String(r.referrer_source ?? '(none)');
+      const name = String(r.referrer_name ?? '');
+      priorMap.set(`${source}|${name}`, Number(r.sessions) || 0);
+    }
+  }
+
+  return current.rows.map((r) => {
+    const source = String(r.referrer_source ?? '(none)');
+    const name = String(r.referrer_name ?? '');
+    return {
+      source,
+      name,
+      sessions: Number(r.sessions) || 0,
+      convRate: (Number(r.conversion_rate) || 0) * 100,
+      priorSessions: priorMap.get(`${source}|${name}`) ?? 0,
+    };
+  });
+}
