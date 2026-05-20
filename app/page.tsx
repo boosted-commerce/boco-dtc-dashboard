@@ -707,6 +707,9 @@ export default async function Home({
           </div>
         </header>
 
+        <h2 className="mt-2 mb-3 text-xl font-semibold uppercase tracking-wider text-zinc-700 dark:text-zinc-300">
+          Layer 1 · Store Overview
+        </h2>
         <section className="mb-6 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950">
           <div className="mb-3 flex items-center justify-between">
             <div className="text-sm font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
@@ -800,9 +803,6 @@ export default async function Home({
           />
         </section>
 
-        <h2 className="mt-10 mb-3 text-xl font-semibold uppercase tracking-wider text-zinc-700 dark:text-zinc-300">
-          Layer 1 · Subscription Highlights
-        </h2>
         <section className="mb-6">
           <TopProductsTable rows={data.topSubscriptionProducts} />
         </section>
