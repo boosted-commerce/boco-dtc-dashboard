@@ -9,7 +9,7 @@ export function parsePeriod(raw: unknown): Period {
   return PERIODS.find((p) => p === n) ?? 28;
 }
 
-export const BRANDS = ['ASN', 'VIV', 'PRL'] as const;
+export const BRANDS = ['ASN', 'HHH', 'VIV', 'PRL'] as const;
 export type Brand = (typeof BRANDS)[number];
 
 export function parseBrand(raw: unknown): Brand {

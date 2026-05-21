@@ -16,6 +16,10 @@ export const WATCHED_PAGES: Record<Brand, string[]> = {
     '/products/snail-mucin-essence',
     '/collections/best-sellers',
   ],
+  HHH: [
+    '/',
+    '/collections/all',
+  ],
   VIV: [
     '/products/multi-collagen-pills',
     '/',

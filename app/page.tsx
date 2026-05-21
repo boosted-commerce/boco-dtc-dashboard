@@ -683,6 +683,16 @@ export default async function Home({
     products: 'units',
     attribution: 'orders attributed',
   };
+  // Noun used in the "Show all N <noun>" expand link, per tab.
+  const rowNounByTab: Record<Layer2Tab, string> = {
+    watched: 'watched pages',
+    pdps: 'product pages',
+    collections: 'collections',
+    cms: 'pages',
+    products: 'products',
+    attribution: 'sources',
+  };
+  const COLLAPSED_ROWS = 10;
 
   return (
     <main className="min-h-screen bg-zinc-50 px-6 py-10 dark:bg-black">
@@ -854,7 +864,7 @@ export default async function Home({
             <div className="mt-2 text-[11px] text-zinc-500 dark:text-zinc-400">
               {tab === 'attribution'
                 ? 'Traffic sources · session-level data from ShopifyQL · top 10 by volume (expand for more)'
-                : 'DTC orders only · top 100 by revenue · click-through coming with Layer 3'}
+                : 'DTC orders only · top 10 by revenue (expand for more) · click-through coming with Layer 3'}
             </div>
           </div>
           {tab === 'watched' && (
@@ -866,7 +876,7 @@ export default async function Home({
             </div>
           )}
           <Layer2Table
-            rows={tab === 'attribution' && !expanded ? layer2Rows.slice(0, 10) : layer2Rows}
+            rows={expanded ? layer2Rows : layer2Rows.slice(0, COLLAPSED_ROWS)}
             metricNoun={metricNounByTab[tab]}
             emptyMessage={`No ${LAYER2_LABELS[tab].toLowerCase()} data in this period for ${brand}.`}
             period={period}
@@ -876,7 +886,7 @@ export default async function Home({
             showSessions={starrableTabs.has(tab) || tab === 'attribution'}
             showRevenue={tab !== 'attribution'}
           />
-          {tab === 'attribution' && layer2Rows.length > 10 && (
+          {layer2Rows.length > COLLAPSED_ROWS && (
             <div className="flex justify-center border-t border-zinc-100 bg-zinc-50/50 px-5 py-3 dark:border-zinc-800 dark:bg-zinc-900/30">
               <Link
                 href={`/?brand=${brand}&period=${period}&tab=${tab}&source=${source}${expanded ? '' : '&expanded=true'}`}
@@ -884,8 +894,8 @@ export default async function Home({
                 className="text-xs font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
               >
                 {expanded
-                  ? '↑ Show top 10'
-                  : `↓ Show all ${layer2Rows.length} sources`}
+                  ? `↑ Show top ${COLLAPSED_ROWS}`
+                  : `↓ Show all ${layer2Rows.length} ${rowNounByTab[tab]}`}
               </Link>
             </div>
           )}
