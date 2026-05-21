@@ -25,6 +25,7 @@ import {
   type Layer2Tab,
 } from '@/lib/queries/layer2';
 import { getWatchedPaths } from '@/lib/watched-store';
+import { clarityHeatmapUrl } from '@/lib/clarity';
 import { StarButton } from '@/app/_components/star-button';
 import { AddWatchedInput } from '@/app/_components/add-watched-input';
 
@@ -544,6 +545,7 @@ function Layer2Table({
             ? r.priorRevenue
             : r.priorSessions ?? 0;
           const tag = trendTagFor(currentForTrend, priorForTrend);
+          const heatmapUrl = starrable ? clarityHeatmapUrl(brand, r.key) : null;
           return (
             <tr key={r.key} className="border-t border-zinc-100 dark:border-zinc-800">
               {starrable && (
@@ -556,7 +558,36 @@ function Layer2Table({
                 </td>
               )}
               <td className="max-w-md truncate px-5 py-3 text-zinc-900 dark:text-zinc-100">
-                <div className="truncate font-medium">{r.label}</div>
+                <div className="flex items-center gap-1.5">
+                  <span className="truncate font-medium">{r.label}</span>
+                  {heatmapUrl && (
+                    <a
+                      href={heatmapUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="Open heatmap in Microsoft Clarity"
+                      className="shrink-0 text-zinc-400 hover:text-sky-600 dark:text-zinc-500 dark:hover:text-sky-400"
+                      aria-label="Open heatmap in Microsoft Clarity"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                        <polyline points="15 3 21 3 21 9" />
+                        <line x1="10" y1="14" x2="21" y2="3" />
+                      </svg>
+                    </a>
+                  )}
+                </div>
                 {r.sublabel && (
                   <div className="truncate text-xs text-zinc-500 dark:text-zinc-400">
                     {r.sublabel}
