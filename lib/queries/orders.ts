@@ -326,7 +326,9 @@ async function getChannelMix(brand: Brand, period: Period): Promise<ChannelMix> 
           CASE
             WHEN IS_FAIRE_ORDER = TRUE OR SOURCE_NAME = 'faire' THEN 'Faire'
             WHEN SOURCE_NAME = 'web' THEN 'DTC'
+            WHEN SOURCE_NAME = 'subscription_contract_checkout_one' THEN 'Subscription'
             WHEN SOURCE_NAME = 'tiktok' THEN 'TikTok'
+            WHEN SOURCE_NAME = 'shopify_draft_order' THEN 'Manual'
             ELSE 'Other'
           END AS CHANNEL,
           CREATED_AT,

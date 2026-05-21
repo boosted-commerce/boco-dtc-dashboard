@@ -291,6 +291,11 @@ const CHANNEL_STYLES: Record<
     dot: 'bg-emerald-500',
     text: 'text-emerald-700 dark:text-emerald-400',
   },
+  Subscription: {
+    stroke: 'stroke-purple-500',
+    dot: 'bg-purple-500',
+    text: 'text-purple-700 dark:text-purple-400',
+  },
   TikTok: {
     stroke: 'stroke-rose-500',
     dot: 'bg-rose-500',
@@ -300,6 +305,11 @@ const CHANNEL_STYLES: Record<
     stroke: 'stroke-amber-500',
     dot: 'bg-amber-500',
     text: 'text-amber-700 dark:text-amber-500',
+  },
+  Manual: {
+    stroke: 'stroke-sky-500',
+    dot: 'bg-sky-500',
+    text: 'text-sky-700 dark:text-sky-400',
   },
   Other: {
     stroke: 'stroke-zinc-400 dark:stroke-zinc-600',
