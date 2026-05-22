@@ -1,0 +1,44 @@
+name: northbeam-sync
+
+on:
+  schedule:
+    # Daily at 14:00 UTC (07:00 PT / 10:00 ET) — one hour after the
+    # promos sync so they don't contend for the small warehouse.
+    - cron: '0 14 * * *'
+  workflow_dispatch:
+    inputs:
+      days_back:
+        description: 'Days back to fetch (default 1; use higher for backfill)'
+        required: false
+        default: '1'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: node scripts/sync-northbeam.mjs
+        env:
+          NORTHBEAM_SYNC_DAYS_BACK: ${{ inputs.days_back || '1' }}
+
+          NORTHBEAM_CLIENT_ID_ASN: ${{ secrets.NORTHBEAM_CLIENT_ID_ASN }}
+          NORTHBEAM_API_KEY_ASN:   ${{ secrets.NORTHBEAM_API_KEY_ASN }}
+          NORTHBEAM_CLIENT_ID_HHH: ${{ secrets.NORTHBEAM_CLIENT_ID_HHH }}
+          NORTHBEAM_API_KEY_HHH:   ${{ secrets.NORTHBEAM_API_KEY_HHH }}
+          NORTHBEAM_CLIENT_ID_VIV: ${{ secrets.NORTHBEAM_CLIENT_ID_VIV }}
+          NORTHBEAM_API_KEY_VIV:   ${{ secrets.NORTHBEAM_API_KEY_VIV }}
+          NORTHBEAM_CLIENT_ID_PRL: ${{ secrets.NORTHBEAM_CLIENT_ID_PRL }}
+          NORTHBEAM_API_KEY_PRL:   ${{ secrets.NORTHBEAM_API_KEY_PRL }}
+
+          SNOWFLAKE_ACCOUNT:   ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER:      ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_PASSWORD:  ${{ secrets.SNOWFLAKE_PASSWORD }}
+          SNOWFLAKE_ROLE:      ${{ secrets.SNOWFLAKE_ROLE }}
+          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+          SNOWFLAKE_DATABASE:  ${{ secrets.SNOWFLAKE_DATABASE }}
