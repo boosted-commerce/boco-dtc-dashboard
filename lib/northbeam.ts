@@ -18,32 +18,29 @@ function getNorthbeamCredentials(brand: Brand): NorthbeamCreds | null {
   return { clientId, apiKey };
 }
 
-// Diagnostic: returns the raw breakdowns response from Northbeam so we
-// can inspect the actual shape before committing to a parser. Used by
-// /api/northbeam/test.
+// Diagnostic: probes multiple candidate Northbeam endpoint URLs +
+// auth header conventions in parallel so we narrow down the correct
+// shape on the first call. Used by /api/northbeam/test.
 export async function rawBreakdowns(
   brand: Brand,
   period: Period,
 ): Promise<{
-  ok: boolean;
-  status?: number;
-  endpoint?: string;
-  requestBody?: unknown;
-  body?: unknown;
+  attempts: {
+    endpoint: string;
+    authStyle: string;
+    status: number | 'error';
+    body: unknown;
+  }[];
   error?: string;
 }> {
   const creds = getNorthbeamCredentials(brand);
-  if (!creds) return { ok: false, error: `No Northbeam credentials for ${brand}` };
+  if (!creds) return { attempts: [], error: `No Northbeam credentials for ${brand}` };
 
   const now = new Date();
   const start = new Date(now);
   start.setDate(now.getDate() - period);
   const fmt = (d: Date) => d.toISOString().slice(0, 10);
 
-  // Best guess at Northbeam's v2 exports/breakdowns shape. If this 404s
-  // or 400s, we'll iterate on the request body based on the error
-  // response — that's the point of this diagnostic.
-  const endpoint = `${NORTHBEAM_API_BASE}/v2/exports/breakdowns`;
   const requestBody = {
     period_type: 'FIXED',
     period_options: {
@@ -65,27 +62,54 @@ export async function rawBreakdowns(
     ],
   };
 
-  try {
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Data-Client-ID': creds.clientId,
-        Authorization: `Bearer ${creds.apiKey}`,
-      },
-      body: JSON.stringify(requestBody),
-      cache: 'no-store',
-    });
-    const text = await res.text();
-    let body: unknown = text;
-    try { body = JSON.parse(text); } catch { /* keep as text */ }
-    return { ok: res.ok, status: res.status, endpoint, requestBody, body };
-  } catch (err) {
-    return {
-      ok: false,
-      endpoint,
-      requestBody,
-      error: err instanceof Error ? err.message : String(err),
-    };
-  }
+  // Candidate (endpoint, auth-header) combos to probe in parallel.
+  // First one to return ok=true tells us the real shape.
+  const candidates: { endpoint: string; headers: () => Record<string, string>; authStyle: string }[] = [
+    {
+      endpoint: `${NORTHBEAM_API_BASE}/v1/exports/breakdowns`,
+      headers: () => ({ 'Data-Client-ID': creds.clientId, Authorization: `Bearer ${creds.apiKey}` }),
+      authStyle: 'Bearer + Data-Client-ID',
+    },
+    {
+      endpoint: `${NORTHBEAM_API_BASE}/v2/data-export/breakdowns`,
+      headers: () => ({ 'Data-Client-ID': creds.clientId, Authorization: `Bearer ${creds.apiKey}` }),
+      authStyle: 'Bearer + Data-Client-ID',
+    },
+    {
+      endpoint: `${NORTHBEAM_API_BASE}/v1/breakdowns`,
+      headers: () => ({ 'Data-Client-ID': creds.clientId, Authorization: `Bearer ${creds.apiKey}` }),
+      authStyle: 'Bearer + Data-Client-ID',
+    },
+    {
+      endpoint: `${NORTHBEAM_API_BASE}/v2/exports/breakdowns`,
+      headers: () => ({ 'Data-Client-ID': creds.clientId, 'Authorization': creds.apiKey }),
+      authStyle: 'raw key (no Bearer)',
+    },
+  ];
+
+  const attempts = await Promise.all(
+    candidates.map(async ({ endpoint, headers, authStyle }) => {
+      try {
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...headers() },
+          body: JSON.stringify(requestBody),
+          cache: 'no-store',
+        });
+        const text = await res.text();
+        let body: unknown = text.slice(0, 500); // cap to keep diag readable
+        try { body = JSON.parse(text); } catch { /* keep as truncated text */ }
+        return { endpoint, authStyle, status: res.status, body };
+      } catch (err) {
+        return {
+          endpoint,
+          authStyle,
+          status: 'error' as const,
+          body: err instanceof Error ? err.message : String(err),
+        };
+      }
+    }),
+  );
+
+  return { attempts };
 }
