@@ -1,6 +1,6 @@
 import { type NextRequest } from 'next/server';
 import { parseBrand, parsePeriod } from '@/lib/queries/orders';
-import { rawBreakdowns } from '@/lib/northbeam';
+import { probeDataExport } from '@/lib/northbeam';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
   try {
     const brand = parseBrand(request.nextUrl.searchParams.get('brand'));
     const period = parsePeriod(request.nextUrl.searchParams.get('period'));
-    const result = await rawBreakdowns(brand, period);
+    const result = await probeDataExport(brand, period);
     return Response.json({ brand, period, ...result });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

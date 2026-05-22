@@ -1,11 +1,13 @@
 import type { Brand, Period } from '@/lib/queries/orders';
 
-// Northbeam Customer/Exports API client. Per-brand credentials in
+// Northbeam Data Export API client. Per-brand credentials in
 // Vercel env vars: NORTHBEAM_CLIENT_ID_<BRAND>, NORTHBEAM_API_KEY_<BRAND>.
 //
-// All returns are tolerant of missing creds or upstream errors — they
-// yield empty arrays so the dashboard renders with "—" placeholders
-// instead of 500-ing the page.
+// Endpoints documented at:
+//   https://docs.northbeam.io/docs/northbeam-api-data-export-1
+//
+// The data export is async: POST kicks off a job (returns id), then
+// poll GET /result/<id> until the export is ready.
 
 const NORTHBEAM_API_BASE = 'https://api.northbeam.io';
 
@@ -18,16 +20,26 @@ function getNorthbeamCredentials(brand: Brand): NorthbeamCreds | null {
   return { clientId, apiKey };
 }
 
-// Diagnostic: probes multiple candidate Northbeam endpoint URLs +
-// auth header conventions in parallel so we narrow down the correct
-// shape on the first call. Used by /api/northbeam/test.
-export async function rawBreakdowns(
+function authHeaders(creds: NorthbeamCreds): Record<string, string> {
+  return {
+    'Data-Client-ID': creds.clientId,
+    // Per Northbeam docs: "Authorization: Basic <api_key>" — the literal
+    // string "Basic " plus the raw key, NOT a base64-encoded user:pass.
+    Authorization: `Basic ${creds.apiKey}`,
+    Accept: 'application/json',
+  };
+}
+
+// Diagnostic: hits the three sync GET endpoints (metrics, attribution
+// models, breakdowns) so we can confirm auth works and see exactly
+// what fields are askable for in a subsequent data-export POST. Used
+// by /api/northbeam/test.
+export async function probeDataExport(
   brand: Brand,
-  period: Period,
+  _period: Period,
 ): Promise<{
   attempts: {
     endpoint: string;
-    authStyle: string;
     status: number | 'error';
     body: unknown;
   }[];
@@ -36,68 +48,24 @@ export async function rawBreakdowns(
   const creds = getNorthbeamCredentials(brand);
   if (!creds) return { attempts: [], error: `No Northbeam credentials for ${brand}` };
 
-  const now = new Date();
-  const start = new Date(now);
-  start.setDate(now.getDate() - period);
-  const fmt = (d: Date) => d.toISOString().slice(0, 10);
-
-  const requestBody = {
-    period_type: 'FIXED',
-    period_options: {
-      period_starting_at: `${fmt(start)}T00:00:00Z`,
-      period_ending_at: `${fmt(now)}T23:59:59Z`,
-    },
-    breakdowns: ['platform'],
-    options: {
-      attribution_models: ['northbeam_mta'],
-      accounting_modes: ['accrual'],
-      include_kinds: ['paid'],
-    },
-    metrics: [
-      { name: 'spend' },
-      { name: 'attributed_rev' },
-      { name: 'roas' },
-      { name: 'transactions' },
-      { name: 'new_visits' },
-    ],
-  };
-
-  // Auth is confirmed (per Northbeam docs): raw key in Authorization
-  // header, NOT "Bearer <key>". Probing endpoint variations only.
-  const authHeaders = (): Record<string, string> => ({
-    'Data-Client-ID': creds.clientId,
-    Authorization: creds.apiKey,
-  });
-  const candidates: { endpoint: string; headers: () => Record<string, string>; authStyle: string }[] = [
-    'v1/exports/breakdowns',
-    'v1/breakdowns',
-    'v1/reports/breakdowns',
-    'v1/data-export/breakdowns',
-    'v1/analytics/breakdowns',
-    'v1/customer-data/breakdowns',
-  ].map((path) => ({
-    endpoint: `${NORTHBEAM_API_BASE}/${path}`,
-    headers: authHeaders,
-    authStyle: 'raw key',
-  }));
+  const headers = authHeaders(creds);
+  const endpoints = [
+    `${NORTHBEAM_API_BASE}/v1/exports/metrics`,
+    `${NORTHBEAM_API_BASE}/v1/exports/attribution-models`,
+    `${NORTHBEAM_API_BASE}/v1/exports/breakdowns`,
+  ];
 
   const attempts = await Promise.all(
-    candidates.map(async ({ endpoint, headers, authStyle }) => {
+    endpoints.map(async (endpoint) => {
       try {
-        const res = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...headers() },
-          body: JSON.stringify(requestBody),
-          cache: 'no-store',
-        });
+        const res = await fetch(endpoint, { method: 'GET', headers, cache: 'no-store' });
         const text = await res.text();
-        let body: unknown = text.slice(0, 500); // cap to keep diag readable
-        try { body = JSON.parse(text); } catch { /* keep as truncated text */ }
-        return { endpoint, authStyle, status: res.status, body };
+        let body: unknown = text.slice(0, 2000);
+        try { body = JSON.parse(text); } catch { /* keep text */ }
+        return { endpoint, status: res.status, body };
       } catch (err) {
         return {
           endpoint,
-          authStyle,
           status: 'error' as const,
           body: err instanceof Error ? err.message : String(err),
         };
