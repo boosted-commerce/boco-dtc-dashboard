@@ -170,11 +170,15 @@ function Layer2Table({
   metricNoun,
   emptyMessage,
   period,
+  showSessions,
+  showRevenue,
 }: {
   rows: Layer2Row[];
   metricNoun: 'orders' | 'units' | 'orders attributed';
   emptyMessage: string;
   period: Period;
+  showSessions: boolean;
+  showRevenue: boolean;
 }) {
   if (rows.length === 0) {
     return (
@@ -186,16 +190,24 @@ function Layer2Table({
       <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wider text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
         <tr>
           <th className="px-5 py-2 font-medium">Name</th>
+          {showSessions && <th className="px-5 py-2 text-right font-medium">Sessions</th>}
+          {showSessions && <th className="px-5 py-2 text-right font-medium">Conv rate</th>}
           <th className="px-5 py-2 text-right font-medium">{metricNoun}</th>
-          <th className="px-5 py-2 text-right font-medium">Revenue</th>
+          {showRevenue && <th className="px-5 py-2 text-right font-medium">Revenue</th>}
           <th className="px-5 py-2 text-right font-medium">vs prior</th>
-          <th className="px-5 py-2 font-medium">{period}-day trend</th>
+          {showRevenue && (
+            <th className="px-5 py-2 font-medium">{period}-day trend</th>
+          )}
           <th className="px-5 py-2 font-medium">Direction</th>
         </tr>
       </thead>
       <tbody>
         {rows.map((r) => {
-          const tag = trendTagFor(r.currentRevenue, r.priorRevenue);
+          // For sessions-only tabs (Channel Attribution), trend on sessions
+          // vs prior_sessions — revenue is always $0 on those rows.
+          const currentForTrend = showRevenue ? r.currentRevenue : r.sessions ?? 0;
+          const priorForTrend = showRevenue ? r.priorRevenue : r.priorSessions ?? 0;
+          const tag = trendTagFor(currentForTrend, priorForTrend);
           return (
             <tr key={r.key} className="border-t border-zinc-100 dark:border-zinc-800">
               <td className="max-w-md truncate px-5 py-3 text-zinc-900 dark:text-zinc-100">
@@ -206,20 +218,38 @@ function Layer2Table({
                   </div>
                 )}
               </td>
+              {showSessions && (
+                <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
+                  {r.sessions !== undefined
+                    ? r.sessions.toLocaleString()
+                    : <span className="text-zinc-400 dark:text-zinc-500">—</span>}
+                </td>
+              )}
+              {showSessions && (
+                <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
+                  {r.convRate !== undefined
+                    ? `${r.convRate.toFixed(2)}%`
+                    : <span className="text-zinc-400 dark:text-zinc-500">—</span>}
+                </td>
+              )}
               <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
                 {r.currentCount.toLocaleString()}
               </td>
-              <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
-                ${r.currentRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-              </td>
+              {showRevenue && (
+                <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
+                  ${r.currentRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                </td>
+              )}
               <td className="px-5 py-3 text-right tabular-nums">
-                <MiniTrend current={r.currentRevenue} prior={r.priorRevenue} />
+                <MiniTrend current={currentForTrend} prior={priorForTrend} />
               </td>
-              <td className="px-5 py-3">
-                <div className="w-32 text-emerald-600 dark:text-emerald-400">
-                  <Sparkline points={r.daily} height={28} />
-                </div>
-              </td>
+              {showRevenue && (
+                <td className="px-5 py-3">
+                  <div className="w-32 text-emerald-600 dark:text-emerald-400">
+                    <Sparkline points={r.daily} height={28} />
+                  </div>
+                </td>
+              )}
               <td className="px-5 py-3">
                 <span
                   className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${tag.className}`}
@@ -253,6 +283,9 @@ export default async function Level2Page({
     products: 'units',
     attribution: 'orders attributed',
   };
+  const pathKeyedTabs: ReadonlySet<Layer2Tab> = new Set(['watched', 'pdps', 'collections', 'cms']);
+  const showSessions = pathKeyedTabs.has(tab) || tab === 'attribution';
+  const showRevenue = tab !== 'attribution';
 
   return (
     <main className="min-h-screen bg-zinc-50 px-6 py-10 dark:bg-black">
@@ -290,8 +323,9 @@ export default async function Level2Page({
                 {LAYER2_LABELS[tab]}
               </div>
               <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                {tab === 'watched' ? 'pages on the watch list' : 'top 100 by revenue'} ·
-                DTC orders only · {brand}
+                {tab === 'attribution'
+                  ? `Traffic sources · session-level data from ShopifyQL · ${brand}`
+                  : `${tab === 'watched' ? 'pages on the watch list' : 'top 100 by revenue'} · DTC orders only · ${brand}`}
               </div>
             </div>
             <PillTabs<Layer2Tab>
@@ -307,6 +341,8 @@ export default async function Level2Page({
             metricNoun={metricNounByTab[tab]}
             emptyMessage={`No ${LAYER2_LABELS[tab].toLowerCase()} data in this period for ${brand}.`}
             period={period}
+            showSessions={showSessions}
+            showRevenue={showRevenue}
           />
         </section>
 
