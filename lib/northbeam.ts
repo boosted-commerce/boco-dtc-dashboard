@@ -62,30 +62,24 @@ export async function rawBreakdowns(
     ],
   };
 
-  // Candidate (endpoint, auth-header) combos to probe in parallel.
-  // First one to return ok=true tells us the real shape.
+  // Auth is confirmed (per Northbeam docs): raw key in Authorization
+  // header, NOT "Bearer <key>". Probing endpoint variations only.
+  const authHeaders = (): Record<string, string> => ({
+    'Data-Client-ID': creds.clientId,
+    Authorization: creds.apiKey,
+  });
   const candidates: { endpoint: string; headers: () => Record<string, string>; authStyle: string }[] = [
-    {
-      endpoint: `${NORTHBEAM_API_BASE}/v1/exports/breakdowns`,
-      headers: () => ({ 'Data-Client-ID': creds.clientId, Authorization: `Bearer ${creds.apiKey}` }),
-      authStyle: 'Bearer + Data-Client-ID',
-    },
-    {
-      endpoint: `${NORTHBEAM_API_BASE}/v2/data-export/breakdowns`,
-      headers: () => ({ 'Data-Client-ID': creds.clientId, Authorization: `Bearer ${creds.apiKey}` }),
-      authStyle: 'Bearer + Data-Client-ID',
-    },
-    {
-      endpoint: `${NORTHBEAM_API_BASE}/v1/breakdowns`,
-      headers: () => ({ 'Data-Client-ID': creds.clientId, Authorization: `Bearer ${creds.apiKey}` }),
-      authStyle: 'Bearer + Data-Client-ID',
-    },
-    {
-      endpoint: `${NORTHBEAM_API_BASE}/v2/exports/breakdowns`,
-      headers: () => ({ 'Data-Client-ID': creds.clientId, 'Authorization': creds.apiKey }),
-      authStyle: 'raw key (no Bearer)',
-    },
-  ];
+    'v1/exports/breakdowns',
+    'v1/breakdowns',
+    'v1/reports/breakdowns',
+    'v1/data-export/breakdowns',
+    'v1/analytics/breakdowns',
+    'v1/customer-data/breakdowns',
+  ].map((path) => ({
+    endpoint: `${NORTHBEAM_API_BASE}/${path}`,
+    headers: authHeaders,
+    authStyle: 'raw key',
+  }));
 
   const attempts = await Promise.all(
     candidates.map(async ({ endpoint, headers, authStyle }) => {
