@@ -91,19 +91,23 @@ export async function getSessionsByPath(
   brand: Brand,
   period: Period,
 ): Promise<Map<string, PageSessions>> {
-  const query = `FROM sessions SHOW sessions, conversion_rate GROUP BY landing_page_url SINCE -${period}d UNTIL today ORDER BY sessions DESC LIMIT 250`;
+  // landing_page_path collapses query-string variants (notably Google
+  // Shopping's srsltid) on Shopify's side BEFORE LIMIT applies — using
+  // landing_page_url instead created hundreds of single-session srsltid
+  // rows per page, most of which fell off the long-tail cutoff.
+  const query = `FROM sessions SHOW sessions, conversion_rate GROUP BY landing_page_path SINCE -${period}d UNTIL today ORDER BY sessions DESC LIMIT 250`;
   const tableData = await runShopifyQL(brand, query);
   if (!tableData) return new Map();
 
-  // Aggregate sessions + implied orders across all URL variants that map to
-  // the same path. conv_rate = sum(orders) / sum(sessions) after merging
-  // — averaging conv_rate directly would weight all variants equally
-  // regardless of traffic volume.
+  // Light JS-side normalization is still defensive (handles trailing
+  // slashes, missing leading slash, etc.) even though Shopify gives us
+  // clean paths. conv_rate = sum(orders) / sum(sessions) so we weight
+  // by traffic when multiple rows happen to share a normalized path.
   const merged = new Map<string, { sessions: number; orders: number }>();
   for (const row of tableData.rows) {
-    const url = String(row.landing_page_url ?? '');
-    if (!url) continue;
-    const path = normalizeShopifyUrl(url);
+    const raw = String(row.landing_page_path ?? '');
+    if (!raw) continue;
+    const path = normalizeShopifyUrl(raw);
     const sessions = Number(row.sessions) || 0;
     const convRateDecimal = Number(row.conversion_rate) || 0;
     const ordersAttributable = sessions * convRateDecimal;
