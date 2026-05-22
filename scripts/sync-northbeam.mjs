@@ -109,15 +109,19 @@ async function pollExportResult(brand, exportId) {
     let json;
     try { json = JSON.parse(text); } catch { json = null; }
 
-    // First-run logging so we can see what result format actually looks like.
     if (attempt === 1 || attempt % 5 === 0) {
-      console.log(`  poll #${attempt} status=${res.status} body=${text.slice(0, 200)}`);
+      console.log(`  poll #${attempt} status=${res.status} body=${text.slice(0, 500)}`);
     }
 
-    // Northbeam often returns a status field like "PENDING" / "COMPLETED"
-    // alongside the data once it's ready. The exact shape will become
-    // clear from the logs above on first run — adjust if needed.
-    if (res.ok && json && (json.status === 'COMPLETED' || Array.isArray(json.rows) || Array.isArray(json.data))) {
+    // Northbeam signals "ready" with: finished_at != null AND result is a
+    // non-empty array of GCS presigned URLs pointing to CSV files.
+    if (
+      res.ok &&
+      json &&
+      json.finished_at &&
+      Array.isArray(json.result) &&
+      json.result.length > 0
+    ) {
       return json;
     }
     if (res.status === 404 || res.status >= 500) {
@@ -128,51 +132,89 @@ async function pollExportResult(brand, exportId) {
   throw new Error(`pollExportResult ${brand} ${exportId} timed out after ${POLL_MAX_ATTEMPTS * POLL_INTERVAL_MS / 1000}s`);
 }
 
-// Parse rows from the result body. Northbeam's exact response shape isn't
-// fully nailed down yet — try a few common patterns; log + skip on
-// surprise.
-function parseRowsFromResult(brand, snapshotDate, result) {
-  // Try a few candidate paths for where the rows live.
-  const candidateArrays = [
-    result?.rows,
-    result?.data,
-    result?.data?.rows,
-    result?.result?.rows,
-  ].filter(Array.isArray);
-  if (candidateArrays.length === 0) {
-    console.warn(`  no rows found in result for ${brand} ${snapshotDate} — top-level keys: ${Object.keys(result ?? {}).join(', ')}`);
-    return [];
+// The result object contains presigned URLs to CSV files in GCS.
+// Download each, parse, and combine into one rows array.
+async function downloadAndParseRows(brand, snapshotDate, result) {
+  const urls = result.result;
+  let parsedRows = [];
+  let headerLogged = false;
+  for (const url of urls) {
+    console.log(`  downloading export file (${url.split('?')[0].slice(-40)})`);
+    const res = await fetch(url);
+    if (!res.ok) {
+      console.error(`  failed to download: ${res.status}`);
+      continue;
+    }
+    const text = await res.text();
+    if (!headerLogged) {
+      console.log(`  csv head (first 500 chars): ${text.slice(0, 500)}`);
+      headerLogged = true;
+    }
+    parsedRows = parsedRows.concat(parseCsv(text));
   }
-  const raw = candidateArrays[0];
 
   const out = [];
-  for (const r of raw) {
-    // Platform might live in r.platform, r['Platform (Northbeam)'], or as
-    // part of a breakdowns object — try the common variants.
+  for (const r of parsedRows) {
+    // The CSV column name for platform is unknown yet on first run; try
+    // common variants. The first-run log above will tell us the actual
+    // header name so we can lock this down.
     const platform =
       r.platform ??
       r['Platform (Northbeam)'] ??
-      r.breakdowns?.['Platform (Northbeam)'] ??
-      r.breakdown?.platform ??
+      r['breakdown_platform'] ??
+      r['breakdown_value'] ??
+      r['Breakdown'] ??
       null;
-    if (!platform) continue;
-
-    // Metric values may be top-level or nested under r.metrics.
-    const m = r.metrics ?? r;
+    if (!platform || platform === '') continue;
     out.push({
       BRAND: brand,
       SNAPSHOT_DATE: snapshotDate,
       PLATFORM: String(platform),
       ATTRIBUTION_MODEL,
       ACCOUNTING_MODE,
-      SPEND: numOrNull(m.spend),
-      REV_ATTRIBUTED: numOrNull(m.revAttributed),
-      TXNS: numOrNull(m.txns),
-      CUSTOMERS_FT: numOrNull(m.customersFt),
-      NEW_VISITS: numOrNull(m.newVisits),
-      ROAS: numOrNull(m.roas),
+      SPEND: numOrNull(r.spend ?? r.Spend),
+      REV_ATTRIBUTED: numOrNull(r.revAttributed ?? r['Attributed Rev'] ?? r.rev_attributed),
+      TXNS: numOrNull(r.txns ?? r.Transactions),
+      CUSTOMERS_FT: numOrNull(r.customersFt ?? r['Customers (New)']),
+      NEW_VISITS: numOrNull(r.newVisits ?? r['New Visits']),
+      ROAS: numOrNull(r.roas ?? r.ROAS),
     });
   }
+  return out;
+}
+
+// Minimal CSV parser: handles quoted fields with embedded commas and
+// escaped double-quotes ("").
+function parseCsv(text) {
+  const lines = text.replace(/\r\n/g, '\n').trim().split('\n');
+  if (lines.length < 2) return [];
+  const headers = parseCsvLine(lines[0]);
+  const out = [];
+  for (let i = 1; i < lines.length; i++) {
+    if (!lines[i]) continue;
+    const cells = parseCsvLine(lines[i]);
+    const row = {};
+    headers.forEach((h, idx) => { row[h] = cells[idx] ?? ''; });
+    out.push(row);
+  }
+  return out;
+}
+
+function parseCsvLine(line) {
+  const out = [];
+  let inQuotes = false;
+  let current = '';
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') {
+      if (inQuotes && line[i + 1] === '"') { current += '"'; i++; continue; }
+      inQuotes = !inQuotes;
+      continue;
+    }
+    if (c === ',' && !inQuotes) { out.push(current); current = ''; continue; }
+    current += c;
+  }
+  out.push(current);
   return out;
 }
 
@@ -284,7 +326,7 @@ try {
         const exportId = await startExport(brand, date);
         console.log(`  exportId=${exportId}`);
         const result = await pollExportResult(brand, exportId);
-        const rows = parseRowsFromResult(brand, date, result);
+        const rows = await downloadAndParseRows(brand, date, result);
         const written = await mergeRows(conn, rows);
         console.log(`  wrote ${written} rows for ${brand} ${date}`);
         totalWritten += written;
