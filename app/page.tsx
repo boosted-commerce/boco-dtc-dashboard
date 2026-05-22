@@ -25,6 +25,7 @@ import {
   type Layer2Tab,
 } from '@/lib/queries/layer2';
 import { getWatchedPaths } from '@/lib/watched-store';
+import { getNorthbeamSummary, type NorthbeamSummary } from '@/lib/queries/northbeam';
 import { clarityHeatmapUrl } from '@/lib/clarity';
 import { StarButton } from '@/app/_components/star-button';
 import { AddWatchedInput } from '@/app/_components/add-watched-input';
@@ -464,6 +465,102 @@ function ChannelMix({
   );
 }
 
+function NorthbeamPanel({
+  data,
+  period,
+}: {
+  data: NorthbeamSummary;
+  period: Period;
+}) {
+  // Hide entirely if no paid spend in either window — the panel only
+  // exists to monitor paid efficiency. Brands without paid spend get no
+  // empty panel cluttering the page.
+  if (data.totalSpend === 0 && data.priorTotalSpend === 0) return null;
+
+  return (
+    <section className="mb-6 overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
+        <div>
+          <div className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+            Paid Attribution · Northbeam
+          </div>
+          <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
+            Last {period} days · Clicks + Modeled Views (MTA)
+          </div>
+        </div>
+      </div>
+      <table className="w-full text-sm">
+        <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wider text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
+          <tr>
+            <th className="px-5 py-2 font-medium">Channel</th>
+            <th className="px-5 py-2 text-right font-medium">Spend</th>
+            <th className="px-5 py-2 text-right font-medium">Attr Rev</th>
+            <th className="px-5 py-2 text-right font-medium">ROAS</th>
+            <th className="px-5 py-2 text-right font-medium">New Visits</th>
+            <th className="px-5 py-2 text-right font-medium">vs prior (ROAS)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.channels
+            .filter((c) => c.spend > 0 || c.priorSpend > 0)
+            .map((c) => (
+              <tr key={c.platform} className="border-t border-zinc-100 dark:border-zinc-800">
+                <td className="px-5 py-3 text-zinc-900 dark:text-zinc-100">{c.platform}</td>
+                <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
+                  {c.spend > 0
+                    ? fmtShort(c.spend)
+                    : <span className="text-zinc-300 dark:text-zinc-600">—</span>}
+                </td>
+                <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
+                  {c.revAttributed > 0
+                    ? fmtShort(c.revAttributed)
+                    : <span className="text-zinc-300 dark:text-zinc-600">—</span>}
+                </td>
+                <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
+                  {c.roas != null
+                    ? `${c.roas.toFixed(1)}x`
+                    : <span className="text-zinc-300 dark:text-zinc-600">—</span>}
+                </td>
+                <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
+                  {c.newVisits > 0
+                    ? c.newVisits.toLocaleString()
+                    : <span className="text-zinc-300 dark:text-zinc-600">—</span>}
+                </td>
+                <td className="px-5 py-3 text-right tabular-nums">
+                  {c.roas != null && c.priorRoas != null
+                    ? <MiniTrend current={c.roas} prior={c.priorRoas} />
+                    : <span className="text-xs text-zinc-400 dark:text-zinc-500">new</span>}
+                </td>
+              </tr>
+            ))}
+        </tbody>
+        <tfoot>
+          <tr className="border-t-2 border-zinc-200 bg-zinc-50 font-medium dark:border-zinc-700 dark:bg-zinc-900">
+            <td className="px-5 py-3 text-zinc-700 dark:text-zinc-300">TOTAL</td>
+            <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
+              {fmtShort(data.totalSpend)}
+            </td>
+            <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
+              {fmtShort(data.totalRevAttributed)}
+            </td>
+            <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
+              {data.totalRoas != null ? `${data.totalRoas.toFixed(1)}x` : '—'}
+            </td>
+            <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
+              {data.totalNewVisits.toLocaleString()}
+            </td>
+            <td className="px-5 py-3 text-right tabular-nums">
+              {data.totalRoas != null && data.priorTotalRoas != null
+                ? <MiniTrend current={data.totalRoas} prior={data.priorTotalRoas} />
+                : <span className="text-xs text-zinc-400 dark:text-zinc-500">new</span>}
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+    </section>
+  );
+}
+
 function trendTagFor(current: number, prior: number) {
   const pct = pctChange(current, prior);
   if (pct === null) {
@@ -709,10 +806,11 @@ export default async function Home({
   const tab = parseLayer2Tab(sp.tab);
   const source = parseSource(sp.source);
   const expanded = sp.expanded === 'true';
-  const [data, layer2Rows, watchedPaths] = await Promise.all([
+  const [data, layer2Rows, watchedPaths, northbeam] = await Promise.all([
     getStoreOverview(brand, period, source),
     getLayer2(brand, period, tab),
     getWatchedPaths(brand),
+    getNorthbeamSummary(brand, period).catch(() => null),
   ]);
   const watchedSet = new Set(watchedPaths);
   const starrableTabs: ReadonlySet<Layer2Tab> = new Set(['watched', 'pdps', 'collections', 'cms']);
@@ -797,6 +895,8 @@ export default async function Home({
           Layer 1 · Store Overview
         </h2>
         <ChannelMix data={data.channelMix} period={data.period} />
+
+        {northbeam && <NorthbeamPanel data={northbeam} period={period} />}
 
         {/* Row 1: Funnel — Sessions, Conv Rate, Orders */}
         <section className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-3">
