@@ -192,7 +192,7 @@ function connectSnowflake() {
       account: env('SNOWFLAKE_ACCOUNT'),
       username: env('SNOWFLAKE_USER'),
       password: env('SNOWFLAKE_PASSWORD'),
-      role: env('SNOWFLAKE_ROLE'),
+      role: process.env.SNOWFLAKE_ROLE || 'SYSADMIN',
       warehouse: env('SNOWFLAKE_WAREHOUSE'),
       database: env('SNOWFLAKE_DATABASE'),
       schema: 'NORTHBEAM',
