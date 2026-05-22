@@ -49,8 +49,10 @@ export async function probeDataExport(
   if (!creds) return { attempts: [], error: `No Northbeam credentials for ${brand}` };
 
   const headers = authHeaders(creds);
+  // /metrics returns 50k+ chars of metric definitions which truncates the
+  // diagnostic response. Skip it by default — the two smaller endpoints
+  // are what we actually need to finalize the export request body.
   const endpoints = [
-    `${NORTHBEAM_API_BASE}/v1/exports/metrics`,
     `${NORTHBEAM_API_BASE}/v1/exports/attribution-models`,
     `${NORTHBEAM_API_BASE}/v1/exports/breakdowns`,
   ];
