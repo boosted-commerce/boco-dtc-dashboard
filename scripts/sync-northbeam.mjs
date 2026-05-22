@@ -153,34 +153,52 @@ async function downloadAndParseRows(brand, snapshotDate, result) {
     parsedRows = parsedRows.concat(parseCsv(text));
   }
 
-  const out = [];
+  // Northbeam returns campaign-level rows even when level=platform is
+  // requested. Aggregate by breakdown_platform_northbeam (the channel
+  // label like "Facebook Ads", "Google Ads", "Amazon - Ads and Organic")
+  // so we land at one row per platform per day.
+  //
+  // ROAS is intentionally recomputed (sum(rev)/sum(spend)) rather than
+  // averaged — averaging per-campaign ROAS doesn't weight by spend and
+  // gives meaningless numbers when one campaign has tiny spend.
+  const byPlatform = new Map();
   for (const r of parsedRows) {
-    // The CSV column name for platform is unknown yet on first run; try
-    // common variants. The first-run log above will tell us the actual
-    // header name so we can lock this down.
-    const platform =
-      r.platform ??
-      r['Platform (Northbeam)'] ??
-      r['breakdown_platform'] ??
-      r['breakdown_value'] ??
-      r['Breakdown'] ??
-      null;
+    const platform = r.breakdown_platform_northbeam;
     if (!platform || platform === '') continue;
+    const acc = byPlatform.get(platform) ?? {
+      SPEND: 0, REV_ATTRIBUTED: 0, TXNS: 0, CUSTOMERS_FT: 0, NEW_VISITS: 0,
+    };
+    acc.SPEND += numOrZero(r.spend);
+    acc.REV_ATTRIBUTED += numOrZero(r.attributed_rev);
+    acc.TXNS += numOrZero(r.transactions);
+    acc.CUSTOMERS_FT += numOrZero(r.customers_new);
+    acc.NEW_VISITS += numOrZero(r.new_visits);
+    byPlatform.set(platform, acc);
+  }
+
+  const out = [];
+  for (const [platform, m] of byPlatform) {
     out.push({
       BRAND: brand,
       SNAPSHOT_DATE: snapshotDate,
-      PLATFORM: String(platform),
+      PLATFORM: platform,
       ATTRIBUTION_MODEL,
       ACCOUNTING_MODE,
-      SPEND: numOrNull(r.spend ?? r.Spend),
-      REV_ATTRIBUTED: numOrNull(r.revAttributed ?? r['Attributed Rev'] ?? r.rev_attributed),
-      TXNS: numOrNull(r.txns ?? r.Transactions),
-      CUSTOMERS_FT: numOrNull(r.customersFt ?? r['Customers (New)']),
-      NEW_VISITS: numOrNull(r.newVisits ?? r['New Visits']),
-      ROAS: numOrNull(r.roas ?? r.ROAS),
+      SPEND: m.SPEND,
+      REV_ATTRIBUTED: m.REV_ATTRIBUTED,
+      TXNS: m.TXNS,
+      CUSTOMERS_FT: m.CUSTOMERS_FT,
+      NEW_VISITS: m.NEW_VISITS,
+      ROAS: m.SPEND > 0 ? m.REV_ATTRIBUTED / m.SPEND : null,
     });
   }
   return out;
+}
+
+function numOrZero(v) {
+  if (v == null || v === '') return 0;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
 }
 
 // Minimal CSV parser: handles quoted fields with embedded commas and
@@ -264,7 +282,7 @@ async function mergeRows(conn, rows) {
   ]);
 
   const sql = `
-    MERGE INTO DAILY_CHANNEL_METRICS t
+    MERGE INTO BOCO_DASHBOARD.NORTHBEAM.DAILY_CHANNEL_METRICS t
     USING (
       SELECT
         column1 AS BRAND, column2::DATE AS SNAPSHOT_DATE, column3 AS PLATFORM,
