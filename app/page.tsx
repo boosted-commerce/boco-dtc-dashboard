@@ -622,7 +622,22 @@ function Layer2Table({
           {starrable && <th className="w-10 px-3 py-2 font-medium" aria-label="Star" />}
           <th className="px-5 py-2 font-medium">Name</th>
           {showSessions && <th className="px-5 py-2 text-right font-medium">Sessions</th>}
-          {showSessions && <th className="px-5 py-2 text-right font-medium">Conv rate</th>}
+          {showSessions && (
+            <th
+              className="px-5 py-2 text-right font-medium"
+              title="% of sessions that reached the checkout step (Shopify metric — not the same as completed orders)"
+            >
+              Checkout rate
+            </th>
+          )}
+          {showSessions && (
+            <th
+              className="px-5 py-2 text-right font-medium"
+              title="Completed orders ÷ sessions (our calculation from Snowflake). Differs from Checkout rate when customers reach checkout but don't pay, or when orders attribute to a different first-touch page."
+            >
+              Order rate
+            </th>
+          )}
           <th className="px-5 py-2 text-right font-medium">{metricNoun}</th>
           {showRevenue && <th className="px-5 py-2 text-right font-medium">Sub</th>}
           {showRevenue && <th className="px-5 py-2 text-right font-medium">Revenue</th>}
@@ -702,6 +717,13 @@ function Layer2Table({
                 <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
                   {r.convRate !== undefined
                     ? `${r.convRate.toFixed(2)}%`
+                    : <span className="text-zinc-400 dark:text-zinc-500">—</span>}
+                </td>
+              )}
+              {showSessions && (
+                <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
+                  {r.sessions !== undefined && r.sessions > 0
+                    ? `${((r.currentCount / r.sessions) * 100).toFixed(2)}%`
                     : <span className="text-zinc-400 dark:text-zinc-500">—</span>}
                 </td>
               )}
@@ -1042,11 +1064,16 @@ export default async function Home({
           )}
           {starrableTabs.has(tab) && layer2Rows.length > 0 && (
             <div className="border-t border-zinc-100 bg-zinc-50/50 px-5 py-3 text-[11px] text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/30 dark:text-zinc-400">
-              <span className="font-medium">Reading this table:</span> Sessions
-              and Conv Rate measure same-session conversion. Orders / Revenue
-              attribute to a customer&rsquo;s first-touch entry page, so a row
-              with 0% conv but orders &gt; 0 is a top-of-funnel discovery page
-              (visitors land, leave, later convert elsewhere). Sub = subscription
+              <span className="font-medium">Reading this table:</span>{' '}
+              <span className="font-medium">Checkout rate</span> = % of sessions
+              that reached the checkout step (Shopify metric — counts visitors
+              who hit checkout, not just those who paid).{' '}
+              <span className="font-medium">Order rate</span> = completed orders
+              &divide; sessions (our calculation). The two diverge when
+              customers reach checkout but don&rsquo;t pay, or when orders
+              attribute to a different first-touch page (e.g. a discovery row
+              with 0% checkout rate but orders &gt; 0 means visitors landed
+              here, left, and later converted elsewhere). Sub = subscription
               orders that don&rsquo;t generate sessions.
             </div>
           )}

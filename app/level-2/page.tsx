@@ -191,7 +191,22 @@ function Layer2Table({
         <tr>
           <th className="px-5 py-2 font-medium">Name</th>
           {showSessions && <th className="px-5 py-2 text-right font-medium">Sessions</th>}
-          {showSessions && <th className="px-5 py-2 text-right font-medium">Conv rate</th>}
+          {showSessions && (
+            <th
+              className="px-5 py-2 text-right font-medium"
+              title="% of sessions that reached the checkout step (Shopify metric — not the same as completed orders)"
+            >
+              Checkout rate
+            </th>
+          )}
+          {showSessions && (
+            <th
+              className="px-5 py-2 text-right font-medium"
+              title="Completed orders ÷ sessions (our calculation from Snowflake)"
+            >
+              Order rate
+            </th>
+          )}
           <th className="px-5 py-2 text-right font-medium">{metricNoun}</th>
           {showRevenue && <th className="px-5 py-2 text-right font-medium">Revenue</th>}
           <th className="px-5 py-2 text-right font-medium">vs prior</th>
@@ -229,6 +244,13 @@ function Layer2Table({
                 <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
                   {r.convRate !== undefined
                     ? `${r.convRate.toFixed(2)}%`
+                    : <span className="text-zinc-400 dark:text-zinc-500">—</span>}
+                </td>
+              )}
+              {showSessions && (
+                <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
+                  {r.sessions !== undefined && r.sessions > 0
+                    ? `${((r.currentCount / r.sessions) * 100).toFixed(2)}%`
                     : <span className="text-zinc-400 dark:text-zinc-500">—</span>}
                 </td>
               )}
