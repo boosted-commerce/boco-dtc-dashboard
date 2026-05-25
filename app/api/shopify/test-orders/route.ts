@@ -25,22 +25,20 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Try several candidate (table, metric) combos. ShopifyQL has both
-    // `orders` and `sales` tables historically; the exact column names
-    // for order count vary by API version.
+    // landing_page_path only exists on the `sessions` table per prior
+    // probes. So we stay on `sessions` and search for the order/revenue
+    // metrics that must live there (conversion_rate is computed from
+    // something — try to find the raw counts).
     const queries = [
-      // total_sales should always exist on the sales table; if this works
-      // we know we can at least pull revenue per path
-      `FROM sales SHOW total_sales GROUP BY landing_page_path SINCE -28d UNTIL today ORDER BY total_sales DESC LIMIT 10`,
-      // ordered_item_quantity is units sold (not orders) but useful as a
-      // signal of how many actual order-line-items happened per path
-      `FROM sales SHOW total_sales, ordered_item_quantity GROUP BY landing_page_path SINCE -28d UNTIL today ORDER BY total_sales DESC LIMIT 10`,
-      // gross_sales is the revenue before discounts/returns
-      `FROM sales SHOW gross_sales, total_sales GROUP BY landing_page_path SINCE -28d UNTIL today ORDER BY total_sales DESC LIMIT 10`,
-      // If a top-level `orders` table exists with an orders count metric,
-      // these are the most common naming conventions
-      `FROM orders SHOW orders GROUP BY landing_page_path SINCE -28d UNTIL today ORDER BY orders DESC LIMIT 10`,
-      `FROM orders SHOW total_orders GROUP BY landing_page_path SINCE -28d UNTIL today ORDER BY total_orders DESC LIMIT 10`,
+      // sessions table with revenue metric — most likely to work
+      `FROM sessions SHOW sessions, total_sales GROUP BY landing_page_path SINCE -28d UNTIL today ORDER BY sessions DESC LIMIT 10`,
+      // Order count metric candidates on sessions table
+      `FROM sessions SHOW sessions, orders GROUP BY landing_page_path SINCE -28d UNTIL today ORDER BY sessions DESC LIMIT 10`,
+      `FROM sessions SHOW sessions, converted_sessions GROUP BY landing_page_path SINCE -28d UNTIL today ORDER BY sessions DESC LIMIT 10`,
+      `FROM sessions SHOW sessions, sessions_converted GROUP BY landing_page_path SINCE -28d UNTIL today ORDER BY sessions DESC LIMIT 10`,
+      `FROM sessions SHOW sessions, total_orders GROUP BY landing_page_path SINCE -28d UNTIL today ORDER BY sessions DESC LIMIT 10`,
+      // gross_sales / net_sales also worth a try
+      `FROM sessions SHOW sessions, gross_sales GROUP BY landing_page_path SINCE -28d UNTIL today ORDER BY sessions DESC LIMIT 10`,
     ];
 
     const attempts = await Promise.all(
