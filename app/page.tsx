@@ -27,6 +27,7 @@ import {
 import { getWatchedPaths } from '@/lib/watched-store';
 import { getNorthbeamSummary, type NorthbeamSummary } from '@/lib/queries/northbeam';
 import { clarityHeatmapUrl } from '@/lib/clarity';
+import { findIntelligemsTest } from '@/lib/intelligems-tests';
 import { StarButton } from '@/app/_components/star-button';
 import { AddWatchedInput } from '@/app/_components/add-watched-input';
 
@@ -658,6 +659,7 @@ function Layer2Table({
             : r.priorSessions ?? 0;
           const tag = trendTagFor(currentForTrend, priorForTrend);
           const heatmapUrl = starrable ? clarityHeatmapUrl(brand, r.key) : null;
+          const intelligemsMatch = starrable ? findIntelligemsTest(brand, r.key) : null;
           return (
             <tr key={r.key} className="border-t border-zinc-100 dark:border-zinc-800">
               {starrable && (
@@ -697,6 +699,22 @@ function Layer2Table({
                         <polyline points="15 3 21 3 21 9" />
                         <line x1="10" y1="14" x2="21" y2="3" />
                       </svg>
+                    </a>
+                  )}
+                  {intelligemsMatch && (
+                    <a
+                      href={intelligemsMatch.test.testUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={
+                        intelligemsMatch.role === 'origin'
+                          ? `In Intelligems test (redirect source) — "${intelligemsMatch.test.name}". Most paid traffic is redirected away from this URL; conversion lives on the destination.`
+                          : `In Intelligems test (redirect destination) — "${intelligemsMatch.test.name}". Test traffic redirects here from an origin URL; ShopifyQL credits sessions to the origin, not here.`
+                      }
+                      className="shrink-0 inline-flex items-center rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-700 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-950/60"
+                      aria-label={`In Intelligems test ${intelligemsMatch.test.name}`}
+                    >
+                      A/B
                     </a>
                   )}
                 </div>
