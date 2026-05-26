@@ -588,18 +588,50 @@ function ActivePromosPanel({ promos }: { promos: Promo[] }) {
     },
   };
 
+  const counts = promos.reduce(
+    (acc, p) => ({ ...acc, [p.state]: (acc[p.state] ?? 0) + 1 }),
+    {} as Record<Promo['state'], number>,
+  );
+
   return (
-    <section className="mb-6 overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
-      <div className="border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
-        <div className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-          Promos · Active, Upcoming, and Recently Ended
+    <section className="mb-6 overflow-hidden rounded-lg border-2 border-amber-300 bg-amber-50/40 shadow-sm dark:border-amber-900/60 dark:bg-amber-950/10">
+      {/* Visual accent: amber top stripe distinguishes Promos from the
+          neutral cards above/below so the team's eye lands here when
+          they're trying to explain a metric shift. */}
+      <div className="h-1.5 w-full bg-gradient-to-r from-amber-400 via-amber-500 to-orange-500" />
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-200 px-5 py-3 dark:border-amber-900/60">
+        <div>
+          <div className="flex items-center gap-2 text-base font-semibold text-zinc-900 dark:text-zinc-100">
+            <span aria-hidden="true">🏷️</span>
+            <span>Promo Schedule</span>
+          </div>
+          <div className="text-[11px] text-zinc-600 dark:text-zinc-400">
+            ±7 days from today · synced daily from the team promo sheet
+          </div>
         </div>
-        <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
-          Synced daily from the team promo sheet · ±7 days from today
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          {counts.active ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
+              {counts.active} active
+            </span>
+          ) : null}
+          {counts.upcoming ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-100 px-2 py-0.5 font-medium text-sky-800 dark:bg-sky-950/40 dark:text-sky-300">
+              <span className="h-1.5 w-1.5 rounded-full bg-sky-500" aria-hidden="true" />
+              {counts.upcoming} upcoming
+            </span>
+          ) : null}
+          {counts.recent ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-zinc-100 px-2 py-0.5 font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+              <span className="h-1.5 w-1.5 rounded-full bg-zinc-400 dark:bg-zinc-500" aria-hidden="true" />
+              {counts.recent} recently ended
+            </span>
+          ) : null}
         </div>
       </div>
       <table className="w-full text-sm">
-        <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wider text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
+        <thead className="bg-amber-100/50 text-left text-[11px] uppercase tracking-wider text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
           <tr>
             <th className="px-5 py-2 font-medium">Status</th>
             <th className="px-5 py-2 font-medium">Promo</th>
@@ -613,7 +645,7 @@ function ActivePromosPanel({ promos }: { promos: Promo[] }) {
           {promos.map((p) => {
             const s = stateStyle[p.state];
             return (
-              <tr key={`${p.name}-${p.startDate}`} className="border-t border-zinc-100 dark:border-zinc-800">
+              <tr key={`${p.name}-${p.startDate}`} className="border-t border-amber-200/60 dark:border-amber-900/40">
                 <td className="whitespace-nowrap px-5 py-3">
                   <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${s.text}`}>
                     <span className={`h-1.5 w-1.5 rounded-full ${s.dot}`} aria-hidden="true" />
