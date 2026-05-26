@@ -30,13 +30,21 @@ export function StarButton({
             action: next ? 'add' : 'remove',
           }),
         });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        // Re-render Server Components so the Watched tab reflects the change.
+        if (!res.ok) {
+          // Surface the server's error message — most commonly the
+          // "watched list at max" cap so the user knows why nothing
+          // happened. alert() is rough but the only star-button signal
+          // we have until we add a toast system.
+          const body = await res.json().catch(() => ({}));
+          const msg = typeof body?.error === 'string' ? body.error : `HTTP ${res.status}`;
+          throw new Error(msg);
+        }
         router.refresh();
       } catch (err) {
-        // Revert optimistic state on failure
-        setStarred(!next);
-        console.error('Toggle failed', err);
+        setStarred(!next); // revert optimistic state
+        const msg = err instanceof Error ? err.message : String(err);
+        // eslint-disable-next-line no-alert
+        alert(msg);
       }
     });
   };

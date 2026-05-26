@@ -62,10 +62,28 @@ export async function getAllWatchedPaths(): Promise<Record<Brand, string[]>> {
   return Object.fromEntries(entries) as Record<Brand, string[]>;
 }
 
+// Max watched URLs per brand. Matches the Clarity API's per-call return
+// budget (top-100 URLs) — keeping the watched list short means a single
+// Clarity API call covers all of them with overhead to spare.
+export const WATCHED_MAX = 10;
+
 export async function addWatchedPath(brand: Brand, path: string): Promise<void> {
   const redis = getRedis();
   if (!redis) throw new Error('Watched-pages store not configured (UPSTASH_REDIS_REST_URL missing)');
   await ensureSeeded(brand);
+
+  // Idempotent — re-adding an already-watched path is a no-op and
+  // doesn't count against the cap.
+  const alreadyMember = await redis.sismember(key(brand), path);
+  if (alreadyMember === 1) return;
+
+  const currentCount = await redis.scard(key(brand));
+  if (currentCount >= WATCHED_MAX) {
+    throw new Error(
+      `Watched list is at the ${WATCHED_MAX}-page max for ${brand}. Remove one before adding another.`,
+    );
+  }
+
   await redis.sadd(key(brand), path);
 }
 

@@ -27,6 +27,7 @@ import {
 import { getWatchedPaths } from '@/lib/watched-store';
 import { getNorthbeamSummary, type NorthbeamSummary } from '@/lib/queries/northbeam';
 import { clarityHeatmapUrl } from '@/lib/clarity';
+import { getClarityMetrics, type ClarityMetricsMap } from '@/lib/clarity-metrics';
 import { findIntelligemsTest } from '@/lib/intelligems-tests';
 import { StarButton } from '@/app/_components/star-button';
 import { AddWatchedInput } from '@/app/_components/add-watched-input';
@@ -600,6 +601,8 @@ function Layer2Table({
   starrable,
   showSessions,
   showRevenue,
+  showClarityMetrics,
+  clarityMetrics,
 }: {
   rows: Layer2Row[];
   metricNoun: 'orders' | 'units' | 'orders attributed';
@@ -610,6 +613,8 @@ function Layer2Table({
   starrable: boolean;
   showSessions: boolean;
   showRevenue: boolean;
+  showClarityMetrics: boolean;
+  clarityMetrics: ClarityMetricsMap;
 }) {
   if (rows.length === 0) {
     return (
@@ -642,6 +647,34 @@ function Layer2Table({
           <th className="px-5 py-2 text-right font-medium">{metricNoun}</th>
           {showRevenue && <th className="px-5 py-2 text-right font-medium">Sub</th>}
           {showRevenue && <th className="px-5 py-2 text-right font-medium">Revenue</th>}
+          {showClarityMetrics && (
+            <>
+              <th
+                className="px-5 py-2 text-right font-medium"
+                title="Sessions in the last 3 days where Clarity recorded rapid repeated clicks indicating user frustration"
+              >
+                Rage
+              </th>
+              <th
+                className="px-5 py-2 text-right font-medium"
+                title="Sessions in the last 3 days where Clarity recorded clicks on non-interactive elements"
+              >
+                Dead clicks
+              </th>
+              <th
+                className="px-5 py-2 text-right font-medium"
+                title="Average scroll depth across recent sessions (0-100)"
+              >
+                Scroll %
+              </th>
+              <th
+                className="px-5 py-2 text-right font-medium"
+                title="Average time on page across recent sessions"
+              >
+                Avg time
+              </th>
+            </>
+          )}
           <th className="px-5 py-2 text-right font-medium">vs prior</th>
           {showRevenue && (
             <th className="px-5 py-2 font-medium">{period}-day trend</th>
@@ -760,6 +793,27 @@ function Layer2Table({
                   ${r.currentRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                 </td>
               )}
+              {showClarityMetrics && (() => {
+                const m = clarityMetrics.get(r.key);
+                const dash = <span className="text-zinc-300 dark:text-zinc-600">—</span>;
+                const fmtSecs = (s: number) => (s >= 60 ? `${Math.round(s / 60)}m ${Math.round(s % 60)}s` : `${Math.round(s)}s`);
+                return (
+                  <>
+                    <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
+                      {m?.rageClicks != null ? m.rageClicks.toLocaleString() : dash}
+                    </td>
+                    <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
+                      {m?.deadClicks != null ? m.deadClicks.toLocaleString() : dash}
+                    </td>
+                    <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
+                      {m?.scrollDepthPct != null ? `${Math.round(m.scrollDepthPct)}%` : dash}
+                    </td>
+                    <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
+                      {m?.avgTimeSeconds != null ? fmtSecs(m.avgTimeSeconds) : dash}
+                    </td>
+                  </>
+                );
+              })()}
               <td className="px-5 py-3 text-right tabular-nums">
                 <MiniTrend current={currentForTrend} prior={priorForTrend} />
               </td>
@@ -846,11 +900,13 @@ export default async function Home({
   const tab = parseLayer2Tab(sp.tab);
   const source = parseSource(sp.source);
   const expanded = sp.expanded === 'true';
-  const [data, layer2Rows, watchedPaths, northbeam] = await Promise.all([
+  const [data, layer2Rows, watchedPaths, northbeam, clarityMetrics] = await Promise.all([
     getStoreOverview(brand, period, source),
     getLayer2(brand, period, tab),
     getWatchedPaths(brand),
     getNorthbeamSummary(brand, period).catch(() => null),
+    // Only fetched on Watched tab — the only tab that renders the columns.
+    tab === 'watched' ? getClarityMetrics(brand).catch(() => new Map() as ClarityMetricsMap) : Promise.resolve(new Map() as ClarityMetricsMap),
   ]);
   const watchedSet = new Set(watchedPaths);
   const starrableTabs: ReadonlySet<Layer2Tab> = new Set(['watched', 'pdps', 'collections', 'cms']);
@@ -1066,6 +1122,8 @@ export default async function Home({
             starrable={starrableTabs.has(tab)}
             showSessions={starrableTabs.has(tab) || tab === 'attribution'}
             showRevenue={tab !== 'attribution'}
+            showClarityMetrics={tab === 'watched'}
+            clarityMetrics={clarityMetrics}
           />
           {layer2Rows.length > COLLAPSED_ROWS && (
             <div className="flex justify-center border-t border-zinc-100 bg-zinc-50/50 px-5 py-3 dark:border-zinc-800 dark:bg-zinc-900/30">
