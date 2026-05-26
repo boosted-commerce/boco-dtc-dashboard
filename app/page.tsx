@@ -25,6 +25,7 @@ import {
   type Layer2Tab,
 } from '@/lib/queries/layer2';
 import { getWatchedPaths } from '@/lib/watched-store';
+import { getActivePromos, type Promo } from '@/lib/queries/promos';
 import { getNorthbeamSummary, type NorthbeamSummary } from '@/lib/queries/northbeam';
 import { clarityHeatmapUrl } from '@/lib/clarity';
 import { getClarityMetrics, type ClarityMetricsMap } from '@/lib/clarity-metrics';
@@ -563,6 +564,89 @@ function NorthbeamPanel({
   );
 }
 
+function ActivePromosPanel({ promos }: { promos: Promo[] }) {
+  // Hide entirely if no promos within the upcoming/active/recent window
+  // for this brand — the panel exists to surface context, not clutter
+  // the page with empty state.
+  if (promos.length === 0) return null;
+
+  const stateStyle: Record<Promo['state'], { dot: string; label: string; text: string }> = {
+    active: {
+      dot: 'bg-emerald-500',
+      label: 'Active now',
+      text: 'text-emerald-700 dark:text-emerald-400',
+    },
+    upcoming: {
+      dot: 'bg-sky-500',
+      label: 'Upcoming',
+      text: 'text-sky-700 dark:text-sky-400',
+    },
+    recent: {
+      dot: 'bg-zinc-400 dark:bg-zinc-500',
+      label: 'Recently ended',
+      text: 'text-zinc-500 dark:text-zinc-400',
+    },
+  };
+
+  return (
+    <section className="mb-6 overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+      <div className="border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
+        <div className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+          Promos · Active, Upcoming, and Recently Ended
+        </div>
+        <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
+          Synced daily from the team promo sheet · ±7 days from today
+        </div>
+      </div>
+      <table className="w-full text-sm">
+        <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wider text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
+          <tr>
+            <th className="px-5 py-2 font-medium">Status</th>
+            <th className="px-5 py-2 font-medium">Promo</th>
+            <th className="px-5 py-2 font-medium">Code</th>
+            <th className="px-5 py-2 font-medium">Discount</th>
+            <th className="px-5 py-2 font-medium">Applies To</th>
+            <th className="px-5 py-2 font-medium">Window</th>
+          </tr>
+        </thead>
+        <tbody>
+          {promos.map((p) => {
+            const s = stateStyle[p.state];
+            return (
+              <tr key={`${p.name}-${p.startDate}`} className="border-t border-zinc-100 dark:border-zinc-800">
+                <td className="whitespace-nowrap px-5 py-3">
+                  <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${s.text}`}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${s.dot}`} aria-hidden="true" />
+                    {s.label}
+                  </span>
+                </td>
+                <td className="px-5 py-3 text-zinc-900 dark:text-zinc-100">
+                  <div className="font-medium">{p.name}</div>
+                  {p.description && (
+                    <div className="text-xs text-zinc-500 dark:text-zinc-400">{p.description}</div>
+                  )}
+                </td>
+                <td className="whitespace-nowrap px-5 py-3 font-mono text-xs text-zinc-700 dark:text-zinc-300">
+                  {p.code || <span className="text-zinc-300 dark:text-zinc-600">—</span>}
+                </td>
+                <td className="whitespace-nowrap px-5 py-3 text-zinc-700 dark:text-zinc-300">
+                  {p.discountType || <span className="text-zinc-300 dark:text-zinc-600">—</span>}
+                </td>
+                <td className="px-5 py-3 text-zinc-700 dark:text-zinc-300">
+                  {p.appliesTo || <span className="text-zinc-300 dark:text-zinc-600">—</span>}
+                </td>
+                <td className="whitespace-nowrap px-5 py-3 text-xs text-zinc-500 dark:text-zinc-400">
+                  {p.startDate} → {p.endDate}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
 function trendTagFor(current: number, prior: number) {
   const pct = pctChange(current, prior);
   if (pct === null) {
@@ -900,13 +984,14 @@ export default async function Home({
   const tab = parseLayer2Tab(sp.tab);
   const source = parseSource(sp.source);
   const expanded = sp.expanded === 'true';
-  const [data, layer2Rows, watchedPaths, northbeam, clarityMetrics] = await Promise.all([
+  const [data, layer2Rows, watchedPaths, northbeam, clarityMetrics, promos] = await Promise.all([
     getStoreOverview(brand, period, source),
     getLayer2(brand, period, tab),
     getWatchedPaths(brand),
     getNorthbeamSummary(brand, period).catch(() => null),
     // Only fetched on Watched tab — the only tab that renders the columns.
     tab === 'watched' ? getClarityMetrics(brand).catch(() => new Map() as ClarityMetricsMap) : Promise.resolve(new Map() as ClarityMetricsMap),
+    getActivePromos(brand).catch(() => [] as Promo[]),
   ]);
   const watchedSet = new Set(watchedPaths);
   const starrableTabs: ReadonlySet<Layer2Tab> = new Set(['watched', 'pdps', 'collections', 'cms']);
@@ -986,6 +1071,8 @@ export default async function Home({
             revenue · <span className="tabular-nums">{fmt(data.aov.yesterday, 'aov')}</span> AOV
           </div>
         </section>
+
+        <ActivePromosPanel promos={promos} />
 
         <h2 className="mt-10 mb-3 text-xl font-semibold uppercase tracking-wider text-zinc-700 dark:text-zinc-300">
           Layer 1 · Store Overview
