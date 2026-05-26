@@ -1,4 +1,4 @@
-// Daily sync: SharePoint promo workbook -> Snowflake DW_ANALYTICS.STG.PROMOS.
+// Daily sync: SharePoint promo workbook -> Snowflake BOCO_DASHBOARD.PROMOS.PROMOS.
 //
 // Strategy: full refresh (TRUNCATE + INSERT). The sheet is the source of
 // truth and ~50-200 rows is trivial — MERGE complexity isn't worth it.
@@ -194,4 +194,4 @@ const token = await getGraphToken();
 const rows = await fetchPromoRows(token);
 console.log(`Fetched ${rows.length} valid promo rows from SharePoint`);
 await writeToSnowflake(rows);
-console.log(`Wrote ${rows.length} rows to DW_ANALYTICS.STG.PROMOS`);
+console.log(`Wrote ${rows.length} rows to BOCO_DASHBOARD.PROMOS.PROMOS`);
