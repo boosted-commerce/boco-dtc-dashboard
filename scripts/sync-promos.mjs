@@ -129,10 +129,14 @@ function connectSnowflake() {
       account: env('SNOWFLAKE_ACCOUNT'),
       username: env('SNOWFLAKE_USER'),
       password: env('SNOWFLAKE_PASSWORD'),
-      role: env('SNOWFLAKE_ROLE'),
+      role: process.env.SNOWFLAKE_ROLE || 'SYSADMIN',
       warehouse: env('SNOWFLAKE_WAREHOUSE'),
-      database: env('SNOWFLAKE_DATABASE'),
-      schema: env('SNOWFLAKE_SCHEMA'),
+      // Hardcoded to BOCO_DASHBOARD because the script uses fully-
+      // qualified table names below — the connection-level db/schema
+      // values don't matter for the actual writes, only for the
+      // session's USE statement.
+      database: 'BOCO_DASHBOARD',
+      schema: 'PROMOS',
     });
     conn.connect((err, c) => (err ? reject(err) : resolve(c)));
   });
@@ -152,7 +156,7 @@ async function writeToSnowflake(rows) {
   const conn = await connectSnowflake();
   try {
     await execute(conn, 'BEGIN', undefined);
-    await execute(conn, 'TRUNCATE TABLE PROMOS', undefined);
+    await execute(conn, 'TRUNCATE TABLE BOCO_DASHBOARD.PROMOS.PROMOS', undefined);
     if (rows.length > 0) {
       // snowflake-sdk doesn't support array-of-arrays binds against
       // multi-row VALUES, so we expand placeholders manually.
@@ -166,7 +170,7 @@ async function writeToSnowflake(rows) {
       ]);
       await execute(
         conn,
-        `INSERT INTO PROMOS
+        `INSERT INTO BOCO_DASHBOARD.PROMOS.PROMOS
            (BRAND, PROMO_NAME, PROMO_DESCRIPTION, START_DATE, END_DATE,
             PROMO_CODE, DISCOUNT_TYPE, APPLIES_TO, UPDATED_AT)
          VALUES ${placeholders}`,
