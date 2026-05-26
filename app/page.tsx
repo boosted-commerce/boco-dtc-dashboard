@@ -1112,19 +1112,24 @@ export default async function Home({
               <AddWatchedInput brand={brand} />
             </div>
           )}
-          <Layer2Table
-            rows={expanded ? layer2Rows : layer2Rows.slice(0, COLLAPSED_ROWS)}
-            metricNoun={metricNounByTab[tab]}
-            emptyMessage={`No ${LAYER2_LABELS[tab].toLowerCase()} data in this period for ${brand}.`}
-            period={period}
-            brand={brand}
-            watchedSet={watchedSet}
-            starrable={starrableTabs.has(tab)}
-            showSessions={starrableTabs.has(tab) || tab === 'attribution'}
-            showRevenue={tab !== 'attribution'}
-            showClarityMetrics={tab === 'watched'}
-            clarityMetrics={clarityMetrics}
-          />
+          {/* overflow-x-auto wrapper lets the wide table (esp. Watched
+              tab with up to 14 columns) scroll horizontally inside the
+              section while the tabs + footnote stay put */}
+          <div className="overflow-x-auto">
+            <Layer2Table
+              rows={expanded ? layer2Rows : layer2Rows.slice(0, COLLAPSED_ROWS)}
+              metricNoun={metricNounByTab[tab]}
+              emptyMessage={`No ${LAYER2_LABELS[tab].toLowerCase()} data in this period for ${brand}.`}
+              period={period}
+              brand={brand}
+              watchedSet={watchedSet}
+              starrable={starrableTabs.has(tab)}
+              showSessions={starrableTabs.has(tab) || tab === 'attribution'}
+              showRevenue={tab !== 'attribution'}
+              showClarityMetrics={tab === 'watched'}
+              clarityMetrics={clarityMetrics}
+            />
+          </div>
           {layer2Rows.length > COLLAPSED_ROWS && (
             <div className="flex justify-center border-t border-zinc-100 bg-zinc-50/50 px-5 py-3 dark:border-zinc-800 dark:bg-zinc-900/30">
               <Link
