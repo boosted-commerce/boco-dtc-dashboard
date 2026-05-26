@@ -25,7 +25,7 @@ import {
   type Layer2Tab,
 } from '@/lib/queries/layer2';
 import { getWatchedPaths } from '@/lib/watched-store';
-import { getActivePromos, type Promo } from '@/lib/queries/promos';
+import { getActivePromos, getPromosInWindow, type Promo } from '@/lib/queries/promos';
 import { getNorthbeamSummary, type NorthbeamSummary } from '@/lib/queries/northbeam';
 import { clarityHeatmapUrl } from '@/lib/clarity';
 import { getClarityMetrics, type ClarityMetricsMap } from '@/lib/clarity-metrics';
@@ -52,16 +52,23 @@ const pctChange = (current: number, prior: number): number | null => {
   return ((current - prior) / prior) * 100;
 };
 
+// Vertical date markers rendered over the sparkline, used to show
+// promo start/end dates so the team can visually correlate metric
+// shifts with what's running.
+type SparklineMarker = { date: string; kind: 'start' | 'end'; label: string };
+
 function Sparkline({
   points,
   className = '',
   width = 240,
   height = 48,
+  markers,
 }: {
   points: DailyPoint[];
   className?: string;
   width?: number;
   height?: number;
+  markers?: SparklineMarker[];
 }) {
   if (points.length < 2) {
     return <div className={`h-12 ${className}`} aria-hidden="true" />;
@@ -85,6 +92,16 @@ function Sparkline({
   const areaPath = `${linePath} L${coords[coords.length - 1][0].toFixed(1)},${height - pad} L${coords[0][0].toFixed(1)},${height - pad} Z`;
   const [lastX, lastY] = coords[coords.length - 1];
 
+  // Map promo-date markers to x-positions by matching against the
+  // sparkline's date axis. Markers for dates outside the window are
+  // skipped silently.
+  const markerLines = (markers ?? []).flatMap((m) => {
+    const idx = points.findIndex((p) => p.date === m.date);
+    if (idx < 0) return [];
+    const x = pad + idx * stepX;
+    return [{ x, kind: m.kind, label: m.label }];
+  });
+
   return (
     <svg
       viewBox={`0 0 ${width} ${height}`}
@@ -94,6 +111,25 @@ function Sparkline({
       aria-hidden="true"
     >
       <path d={areaPath} fill="currentColor" opacity="0.08" />
+      {/* Promo markers — vertical amber dashed line + small flag at
+          the top of the chart. Render BEFORE the line path so the
+          metric trend sits on top of the markers visually. */}
+      {markerLines.map((m, i) => (
+        <g key={`marker-${i}`}>
+          <line
+            x1={m.x.toFixed(1)}
+            x2={m.x.toFixed(1)}
+            y1={pad}
+            y2={height - pad}
+            stroke={m.kind === 'start' ? '#f59e0b' : '#a8a29e'}
+            strokeWidth="1"
+            strokeDasharray="2,2"
+            opacity="0.6"
+          >
+            <title>{m.label}</title>
+          </line>
+        </g>
+      ))}
       <path
         d={linePath}
         fill="none"
@@ -105,6 +141,25 @@ function Sparkline({
       <circle cx={lastX.toFixed(1)} cy={lastY.toFixed(1)} r="2.5" fill="currentColor" />
     </svg>
   );
+}
+
+// Convert the brand's promo list into sparkline markers (start + end
+// dates within the daily-point window get a vertical line).
+function promosToMarkers(promos: Promo[]): SparklineMarker[] {
+  const out: SparklineMarker[] = [];
+  for (const p of promos) {
+    out.push({
+      date: p.startDate,
+      kind: 'start',
+      label: `${p.name} started`,
+    });
+    out.push({
+      date: p.endDate,
+      kind: 'end',
+      label: `${p.name} ended`,
+    });
+  }
+  return out;
 }
 
 function ChangeChip({
@@ -149,11 +204,13 @@ function MetricCard({
   bucket,
   kind,
   sparklineColor = 'text-zinc-700 dark:text-zinc-300',
+  markers,
 }: {
   title: string;
   bucket: Bucket;
   kind: Format;
   sparklineColor?: string;
+  markers?: SparklineMarker[];
 }) {
   const sevenDayAvg = kind === 'aov' ? bucket.sevenDayTotal : bucket.sevenDayTotal / 7;
   const sevenDayLabel = kind === 'aov' ? '7-DAY AOV' : '7-DAY AVG / DAY';
@@ -173,7 +230,7 @@ function MetricCard({
         <ChangeChip current={bucket.current} prior={bucket.prior} label="vs prior period" />
       </div>
       <div className={`mt-3 ${sparklineColor}`}>
-        <Sparkline points={bucket.daily} />
+        <Sparkline points={bucket.daily} markers={markers} />
       </div>
       <div className="mt-3 grid grid-cols-3 gap-2 border-t border-zinc-100 pt-3 dark:border-zinc-800">
         <Tiny label="Yesterday" value={fmt(bucket.yesterday, kind)} />
@@ -189,11 +246,13 @@ function SubMetricCard({
   bucket,
   kind,
   sparklineColor = 'text-zinc-700 dark:text-zinc-300',
+  markers,
 }: {
   title: string;
   bucket: SubBucket;
   kind: Format;
   sparklineColor?: string;
+  markers?: SparklineMarker[];
 }) {
   return (
     <div className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
@@ -210,7 +269,7 @@ function SubMetricCard({
         <ChangeChip current={bucket.current} prior={bucket.prior} label="vs prior period" />
       </div>
       <div className={`mt-3 ${sparklineColor}`}>
-        <Sparkline points={bucket.daily} />
+        <Sparkline points={bucket.daily} markers={markers} />
       </div>
     </div>
   );
@@ -1016,7 +1075,7 @@ export default async function Home({
   const tab = parseLayer2Tab(sp.tab);
   const source = parseSource(sp.source);
   const expanded = sp.expanded === 'true';
-  const [data, layer2Rows, watchedPaths, northbeam, clarityMetrics, promos] = await Promise.all([
+  const [data, layer2Rows, watchedPaths, northbeam, clarityMetrics, promos, sparkPromos] = await Promise.all([
     getStoreOverview(brand, period, source),
     getLayer2(brand, period, tab),
     getWatchedPaths(brand),
@@ -1024,7 +1083,12 @@ export default async function Home({
     // Only fetched on Watched tab — the only tab that renders the columns.
     tab === 'watched' ? getClarityMetrics(brand).catch(() => new Map() as ClarityMetricsMap) : Promise.resolve(new Map() as ClarityMetricsMap),
     getActivePromos(brand).catch(() => [] as Promo[]),
+    // Wider window than active-promos panel; used for sparkline markers
+    // so the Layer 1 cards show start/end ticks for any promo that
+    // overlaps the chart's date axis.
+    getPromosInWindow(brand, period).catch(() => [] as Promo[]),
   ]);
+  const sparkMarkers = promosToMarkers(sparkPromos);
   const watchedSet = new Set(watchedPaths);
   const starrableTabs: ReadonlySet<Layer2Tab> = new Set(['watched', 'pdps', 'collections', 'cms']);
   const metricNounByTab: Record<Layer2Tab, 'orders' | 'units' | 'orders attributed'> = {
@@ -1121,6 +1185,7 @@ export default async function Home({
               bucket={data.sessions}
               kind="count"
               sparklineColor="text-sky-600 dark:text-sky-400"
+              markers={sparkMarkers}
             />
           )}
           {data.convRate && (
@@ -1129,6 +1194,7 @@ export default async function Home({
               bucket={data.convRate}
               kind="percent"
               sparklineColor="text-sky-600 dark:text-sky-400"
+              markers={sparkMarkers}
             />
           )}
           <MetricCard
@@ -1136,6 +1202,7 @@ export default async function Home({
             bucket={data.orders}
             kind="count"
             sparklineColor="text-emerald-600 dark:text-emerald-400"
+            markers={sparkMarkers}
           />
         </section>
 
@@ -1146,18 +1213,21 @@ export default async function Home({
             bucket={data.revenue}
             kind="currency"
             sparklineColor="text-emerald-600 dark:text-emerald-400"
+            markers={sparkMarkers}
           />
           <MetricCard
             title="AOV"
             bucket={data.aov}
             kind="aov"
             sparklineColor="text-blue-600 dark:text-blue-400"
+            markers={sparkMarkers}
           />
           <SubMetricCard
             title="Subscription Share"
             bucket={data.subscriptionShare}
             kind="percent"
             sparklineColor="text-purple-600 dark:text-purple-400"
+            markers={sparkMarkers}
           />
         </section>
 
@@ -1168,18 +1238,21 @@ export default async function Home({
             bucket={data.subscriptionRevenue}
             kind="currency"
             sparklineColor="text-purple-600 dark:text-purple-400"
+            markers={sparkMarkers}
           />
           <MetricCard
             title="Recurring Revenue"
             bucket={data.recurringRevenue}
             kind="currency"
             sparklineColor="text-purple-600 dark:text-purple-400"
+            markers={sparkMarkers}
           />
           <SubMetricCard
             title="New Subscriptions"
             bucket={data.newSubscriptions}
             kind="count"
             sparklineColor="text-purple-600 dark:text-purple-400"
+            markers={sparkMarkers}
           />
         </section>
 

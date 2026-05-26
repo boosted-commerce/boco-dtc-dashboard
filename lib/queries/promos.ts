@@ -40,6 +40,45 @@ const fmtDate = (raw: string | null): string => {
   return String(raw).slice(0, 10);
 };
 
+// Wider query for sparkline annotations: returns every promo whose
+// window overlaps the last `days` days. Used to render vertical
+// markers on Layer 1 sparklines so metric shifts can be visually
+// correlated with promos that ran during the chart's window.
+export async function getPromosInWindow(brand: Brand, days: number): Promise<Promo[]> {
+  const rows = await execute<Row>(
+    `
+      SELECT
+        BRAND, PROMO_NAME, PROMO_DESCRIPTION,
+        TO_VARCHAR(START_DATE, 'YYYY-MM-DD') AS START_DATE,
+        TO_VARCHAR(END_DATE,   'YYYY-MM-DD') AS END_DATE,
+        PROMO_CODE, DISCOUNT_TYPE, APPLIES_TO
+      FROM BOCO_DASHBOARD.PROMOS.PROMOS
+      WHERE BRAND = ?
+        AND END_DATE   >= DATEADD(day, -?, CURRENT_DATE())
+        AND START_DATE <= CURRENT_DATE()
+      ORDER BY START_DATE
+    `,
+    [brand, days],
+  );
+  const today = new Date().toISOString().slice(0, 10);
+  return rows.map((r) => {
+    const start = fmtDate(r.START_DATE);
+    const end = fmtDate(r.END_DATE);
+    const state: Promo['state'] = start > today ? 'upcoming' : end < today ? 'recent' : 'active';
+    return {
+      brand: r.BRAND,
+      name: r.PROMO_NAME,
+      description: r.PROMO_DESCRIPTION || null,
+      startDate: start,
+      endDate: end,
+      code: r.PROMO_CODE || null,
+      discountType: r.DISCOUNT_TYPE || null,
+      appliesTo: r.APPLIES_TO || null,
+      state,
+    };
+  });
+}
+
 export async function getActivePromos(brand: Brand): Promise<Promo[]> {
   const rows = await execute<Row>(
     `
