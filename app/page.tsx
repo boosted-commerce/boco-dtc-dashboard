@@ -741,8 +741,8 @@ function Layer2Table({
                       rel="noopener noreferrer"
                       title={
                         intelligemsMatch.role === 'origin'
-                          ? `In Intelligems test (redirect source) — "${intelligemsMatch.test.name}". Most paid traffic is redirected away from this URL; conversion lives on the destination.`
-                          : `In Intelligems test (redirect destination) — "${intelligemsMatch.test.name}". Test traffic redirects here from an origin URL; ShopifyQL credits sessions to the origin, not here.`
+                          ? `In Intelligems test (origin URL) — "${intelligemsMatch.test.name}". Heads-up: numbers on this row may look low because this dashboard credits orders to the SESSION's landing page only. Intelligems uses cohort attribution (counts ALL downstream orders from anyone who entered the test via this URL — including orders placed in later sessions on different pages). Click to view the test's cohort-attributed conversion rate.`
+                          : `In Intelligems test (destination URL) — "${intelligemsMatch.test.name}". Test traffic redirects here client-side; ShopifyQL credits the session's landing_page to the origin URL, so this row shows mostly organic / direct traffic. Click for the test's cohort view.`
                       }
                       className="shrink-0 inline-flex items-center rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-700 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-950/60"
                       aria-label={`In Intelligems test ${intelligemsMatch.test.name}`}
