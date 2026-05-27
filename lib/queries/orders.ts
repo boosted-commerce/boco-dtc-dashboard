@@ -1,4 +1,5 @@
 import { execute } from '@/lib/snowflake';
+import { withCache } from '@/lib/cache';
 import { getSessionTimeSeries, type SessionDailyPoint } from '@/lib/shopify';
 
 export type Period = 7 | 28 | 90;
@@ -453,6 +454,16 @@ export async function getStoreOverview(
   brand: Brand = 'ASN',
   period: Period = 28,
   source: SourceFilter = 'all',
+): Promise<StoreOverview> {
+  return withCache(`overview:${brand}:${period}:${source}:v1`, 120, () =>
+    getStoreOverviewUncached(brand, period, source),
+  );
+}
+
+async function getStoreOverviewUncached(
+  brand: Brand,
+  period: Period,
+  source: SourceFilter,
 ): Promise<StoreOverview> {
   const [agg, daily, rechargeAgg, rechargeDaily, topProducts, channelMix, sessionSeries] =
     await Promise.all([

@@ -1076,19 +1076,36 @@ export default async function Home({
   const tab = parseLayer2Tab(sp.tab);
   const source = parseSource(sp.source);
   const expanded = sp.expanded === 'true';
-  const [data, layer2Rows, watchedPaths, northbeam, clarityMetrics, promos, sparkPromos] = await Promise.all([
+  const [
+    data,
+    layer2Rows,
+    watchedPaths,
+    northbeam,
+    clarityMetrics,
+    promos,
+    sparkPromos,
+    watchedRowsForNarrative,
+  ] = await Promise.all([
     getStoreOverview(brand, period, source),
     getLayer2(brand, period, tab),
     getWatchedPaths(brand),
     getNorthbeamSummary(brand, period).catch(() => null),
-    // Only fetched on Watched tab — the only tab that renders the columns.
-    tab === 'watched' ? getClarityMetrics(brand).catch(() => new Map() as ClarityMetricsMap) : Promise.resolve(new Map() as ClarityMetricsMap),
+    // Fetched unconditionally now so the narrative can reference Clarity
+    // signals even when not viewing the Watched tab. Cached 12h so the
+    // cost is one Clarity API call per brand per half-day.
+    getClarityMetrics(brand).catch(() => new Map() as ClarityMetricsMap),
     getActivePromos(brand).catch(() => [] as Promo[]),
     // Wider window than active-promos panel; used for sparkline markers
     // so the Layer 1 cards show start/end ticks for any promo that
     // overlaps the chart's date axis.
     getPromosInWindow(brand, period).catch(() => [] as Promo[]),
+    // Watched rows feed the narrative regardless of which tab is active
+    // — gives Claude visibility into the team's curated key URLs.
+    // Cached, so re-asking for the watched tab is free.
+    tab === 'watched' ? Promise.resolve([] as Layer2Row[]) : getLayer2(brand, period, 'watched').catch(() => [] as Layer2Row[]),
   ]);
+  // If we're on the watched tab, layer2Rows IS the watched rows — use it.
+  const watchedRows = tab === 'watched' ? layer2Rows : watchedRowsForNarrative;
   const sparkMarkers = promosToMarkers(sparkPromos);
 
   // Narrative depends on the resolved overview + promos + Northbeam, so
@@ -1102,6 +1119,8 @@ export default async function Home({
     data,
     activePromos: promos,
     northbeam,
+    clarityMetrics,
+    watchedRows,
   }).catch(() => null);
   const watchedSet = new Set(watchedPaths);
   const starrableTabs: ReadonlySet<Layer2Tab> = new Set(['watched', 'pdps', 'collections', 'cms']);

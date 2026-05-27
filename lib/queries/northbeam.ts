@@ -1,4 +1,5 @@
 import { execute } from '@/lib/snowflake';
+import { withCache } from '@/lib/cache';
 import type { Brand, Period } from '@/lib/queries/orders';
 
 // Reads from BOCO_DASHBOARD.NORTHBEAM.DAILY_CHANNEL_METRICS (daily
@@ -46,6 +47,15 @@ const n = (v: string | number | null | undefined): number => {
 };
 
 export async function getNorthbeamSummary(
+  brand: Brand,
+  period: Period,
+): Promise<NorthbeamSummary | null> {
+  return withCache(`northbeam:${brand}:${period}:v1`, 30 * 60, () =>
+    getNorthbeamSummaryUncached(brand, period),
+  );
+}
+
+async function getNorthbeamSummaryUncached(
   brand: Brand,
   period: Period,
 ): Promise<NorthbeamSummary | null> {

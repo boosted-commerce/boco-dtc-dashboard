@@ -1,4 +1,5 @@
 import { execute } from '@/lib/snowflake';
+import { withCache } from '@/lib/cache';
 import type { Brand, DailyPoint, Period } from '@/lib/queries/orders';
 import { getWatchedPaths } from '@/lib/watched-store';
 import { getChannelSessions, getSessionsByPath } from '@/lib/shopify';
@@ -470,6 +471,16 @@ const PATH_KEYED_TABS: ReadonlySet<Layer2Tab> = new Set([
 ]);
 
 export async function getLayer2(
+  brand: Brand,
+  period: Period,
+  tab: Layer2Tab,
+): Promise<Layer2Row[]> {
+  return withCache(`layer2:${brand}:${period}:${tab}:v1`, 120, () =>
+    getLayer2Uncached(brand, period, tab),
+  );
+}
+
+async function getLayer2Uncached(
   brand: Brand,
   period: Period,
   tab: Layer2Tab,

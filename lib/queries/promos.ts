@@ -1,4 +1,5 @@
 import { execute } from '@/lib/snowflake';
+import { withCache } from '@/lib/cache';
 import type { Brand } from '@/lib/queries/orders';
 
 // Reads from BOCO_DASHBOARD.PROMOS.PROMOS (daily-synced from the
@@ -45,6 +46,12 @@ const fmtDate = (raw: string | null): string => {
 // markers on Layer 1 sparklines so metric shifts can be visually
 // correlated with promos that ran during the chart's window.
 export async function getPromosInWindow(brand: Brand, days: number): Promise<Promo[]> {
+  return withCache(`promos:window:${brand}:${days}:v1`, 30 * 60, () =>
+    getPromosInWindowUncached(brand, days),
+  );
+}
+
+async function getPromosInWindowUncached(brand: Brand, days: number): Promise<Promo[]> {
   const rows = await execute<Row>(
     `
       SELECT
@@ -80,6 +87,12 @@ export async function getPromosInWindow(brand: Brand, days: number): Promise<Pro
 }
 
 export async function getActivePromos(brand: Brand): Promise<Promo[]> {
+  return withCache(`promos:active:${brand}:v1`, 30 * 60, () =>
+    getActivePromosUncached(brand),
+  );
+}
+
+async function getActivePromosUncached(brand: Brand): Promise<Promo[]> {
   const rows = await execute<Row>(
     `
       SELECT
