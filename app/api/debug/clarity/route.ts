@@ -34,15 +34,27 @@ export async function GET(request: NextRequest) {
       cache: 'no-store',
     });
     const text = await res.text();
-    let body: unknown = text.slice(0, 5000);
-    try { body = JSON.parse(text); } catch { /* keep text */ }
+    let parsed: unknown;
+    try { parsed = JSON.parse(text); } catch { parsed = null; }
+
+    // Summarize so we can see ALL metric names without hitting the 50K
+    // response truncation limit. Each metric gets a 2-row sample so we
+    // can see the field shape too.
+    let summary: unknown = parsed;
+    if (Array.isArray(parsed)) {
+      summary = parsed.map((m: { metricName?: string; information?: unknown[] }) => ({
+        metricName: m.metricName,
+        informationCount: Array.isArray(m.information) ? m.information.length : 0,
+        sampleRows: Array.isArray(m.information) ? m.information.slice(0, 2) : [],
+      }));
+    }
     return Response.json({
       brand,
       ok: res.ok,
       status: res.status,
       tokenPrefix: token.slice(0, 8),
       url,
-      body,
+      summary,
     });
   } catch (err) {
     return Response.json({
