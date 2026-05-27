@@ -55,12 +55,21 @@ const num = (v: unknown): number => {
   return Number.isFinite(n) ? n : 0;
 };
 
+// Most metrics share these fields. ScrollDepth and EngagementTime have
+// their own narrower shapes (see comments below).
 type RawInformation = {
-  Url?: string;
+  Url?: string | null;
   sessionsCount?: string | number;
   sessionsWithMetricPercentage?: number;
   pagesViews?: string | number;
   subTotal?: string | number;
+  // ScrollDepth metric only:
+  averageScrollDepth?: number;
+  // EngagementTime metric only — seconds, total across sessions:
+  totalTime?: string | number;
+  activeTime?: string | number;
+  // Traffic metric only:
+  totalSessionCount?: string | number;
 };
 type RawMetric = { metricName?: string; information?: RawInformation[] };
 
@@ -79,61 +88,80 @@ type Accumulator = {
 };
 
 function parseClarityResponse(raw: RawMetric[]): ClarityMetricsMap {
-  const byPath = new Map<string, Accumulator>();
-  // The same row's sessionCount appears across multiple metrics for
-  // the same URL — only count it once per URL, using whichever metric
-  // we see first. Track which URLs we've already credited sessions for.
-  const sessionsCounted = new Set<string>();
+  // First pass: collect sessions per URL. ScrollDepth and EngagementTime
+  // metric rows DON'T include sessionsCount themselves — they only
+  // include Url + their metric value. So we look up sessions from a
+  // count-bearing metric (RageClickCount / DeadClickCount / etc.) by
+  // URL when aggregating those two.
+  const sessionsPerUrl = new Map<string, number>();
+  for (const metric of raw) {
+    for (const row of metric.information ?? []) {
+      if (!row.Url) continue;
+      if (sessionsPerUrl.has(row.Url)) continue;
+      const s = num(row.sessionsCount);
+      if (s > 0) sessionsPerUrl.set(row.Url, s);
+    }
+  }
+
+  // Second pass: aggregate per normalized path. Multiple URL variants
+  // (srsltid, utm) collapse to one path; their sessions sum, their
+  // metric counts sum, and scroll/time become sessions-weighted avgs.
+  const byPath = new Map<string, Accumulator & { urlsCounted: Set<string> }>();
 
   for (const metric of raw) {
     const name = (metric.metricName ?? '').toLowerCase();
-    const info = metric.information ?? [];
-    for (const row of info) {
+    for (const row of metric.information ?? []) {
       const url = row.Url;
       if (!url) continue;
       const path = normalizeShopifyUrl(url);
-      const sessions = num(row.sessionsCount);
-      const acc = byPath.get(path) ?? {
-        sessions: 0,
-        rageTotal: 0,
-        deadTotal: 0,
-        scrollDepthWeighted: 0,
-        scrollDepthSessions: 0,
-        timeWeighted: 0,
-        timeSessions: 0,
-      };
+      const sessions = sessionsPerUrl.get(url) ?? num(row.sessionsCount);
 
-      const urlSessionKey = `${path}|${url}`;
-      if (!sessionsCounted.has(urlSessionKey)) {
-        acc.sessions += sessions;
-        sessionsCounted.add(urlSessionKey);
+      let acc = byPath.get(path);
+      if (!acc) {
+        acc = {
+          sessions: 0,
+          rageTotal: 0,
+          deadTotal: 0,
+          scrollDepthWeighted: 0,
+          scrollDepthSessions: 0,
+          timeWeighted: 0,
+          timeSessions: 0,
+          urlsCounted: new Set(),
+        };
+        byPath.set(path, acc);
       }
 
-      // Metric-specific extraction. Clarity returns one metric object
-      // per type; we accumulate across them per path.
-      if (name.includes('rageclick')) {
+      // Credit sessions ONCE per URL variant (not per metric — each
+      // metric's information array re-lists the same URLs with the
+      // same sessions count).
+      if (!acc.urlsCounted.has(url) && sessions > 0) {
+        acc.sessions += sessions;
+        acc.urlsCounted.add(url);
+      }
+
+      // Metric-specific extraction — use the actual field names
+      // Clarity's response uses (confirmed via the debug probe).
+      if (name === 'rageclickcount') {
         acc.rageTotal += num(row.subTotal);
-      } else if (name.includes('deadclick')) {
+      } else if (name === 'deadclickcount') {
         acc.deadTotal += num(row.subTotal);
-      } else if (name.includes('scrolldepth') || name.includes('scroll_depth')) {
-        // sessionsWithMetricPercentage on scroll metrics roughly = avg
-        // % scrolled across sessions. Weight by sessions.
-        const pct = row.sessionsWithMetricPercentage ?? 0;
-        if (sessions > 0 && pct > 0) {
+      } else if (name === 'scrolldepth') {
+        // Shape: { Url, averageScrollDepth: number }
+        const pct = num(row.averageScrollDepth);
+        if (pct > 0 && sessions > 0) {
           acc.scrollDepthWeighted += pct * sessions;
           acc.scrollDepthSessions += sessions;
         }
-      } else if (name.includes('engagementtime') || name.includes('timespent')) {
-        // subTotal is total seconds across sessions (Clarity reports
-        // time in seconds at this endpoint).
-        const totalSeconds = num(row.subTotal);
-        if (sessions > 0 && totalSeconds > 0) {
+      } else if (name === 'engagementtime') {
+        // Shape: { Url, totalTime, activeTime } — values in seconds.
+        // totalTime is summed across sessions on this URL, so we sum
+        // across URL variants then divide by total sessions at the end.
+        const totalSeconds = num(row.totalTime);
+        if (totalSeconds > 0 && sessions > 0) {
           acc.timeWeighted += totalSeconds;
           acc.timeSessions += sessions;
         }
       }
-
-      byPath.set(path, acc);
     }
   }
 
