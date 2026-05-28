@@ -838,7 +838,15 @@ function Layer2Table({
           const heatmapUrl = starrable ? clarityHeatmapUrl(brand, r.key) : null;
           const intelligemsMatch = starrable ? findIntelligemsTest(brand, r.key) : null;
           return (
-            <tr key={r.key} className="border-t border-zinc-100 dark:border-zinc-800">
+            <tr
+              key={r.key}
+              className={
+                'border-t border-zinc-100 dark:border-zinc-800' +
+                (starrable
+                  ? ' transition-colors hover:bg-sky-50/60 dark:hover:bg-sky-950/20'
+                  : '')
+              }
+            >
               {starrable && (
                 <td className="px-3 py-3">
                   <StarButton
@@ -993,36 +1001,63 @@ function TopProductsTable({ rows }: { rows: TopSubProduct[] }) {
       </div>
     );
   }
+  // Total at the bottom so the team can see what "top 5 captured of total"
+  // at a glance — useful for narrative attribution ("most of the surge").
+  const totalSubs = rows.reduce((s, r) => s + r.newSubscriptions, 0);
+  const totalRev = rows.reduce((s, r) => s + r.firstOrderRevenue, 0);
   return (
-    <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
-      <div className="border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
-        <div className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-          Top Subscription Products
+    <div className="overflow-hidden rounded-lg border-2 border-purple-300 bg-purple-50/30 shadow-sm dark:border-purple-900/60 dark:bg-purple-950/10">
+      {/* Visual accent: purple top stripe matches the existing subscription
+          card colors on Layer 1 (Sub Revenue / Recurring / New Subs) so the
+          table reads as "more subscription detail" not a random new card. */}
+      <div className="h-1.5 w-full bg-gradient-to-r from-purple-400 via-purple-500 to-fuchsia-500" />
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-purple-200 px-5 py-3 dark:border-purple-900/60">
+        <div>
+          <div className="flex items-center gap-2 text-base font-semibold text-zinc-900 dark:text-zinc-100">
+            <span aria-hidden="true">💎</span>
+            <span>Top Subscription Products</span>
+          </div>
+          <div className="text-[11px] text-zinc-600 dark:text-zinc-400">
+            Recharge · new sign-ups in selected period
+          </div>
         </div>
-        <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
-          Recharge · new sign-ups in selected period
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-purple-100 px-2 py-0.5 font-medium text-purple-800 dark:bg-purple-950/40 dark:text-purple-300">
+            <span className="h-1.5 w-1.5 rounded-full bg-purple-500" aria-hidden="true" />
+            {totalSubs.toLocaleString()} new subs (top {rows.length})
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-fuchsia-100 px-2 py-0.5 font-medium text-fuchsia-800 dark:bg-fuchsia-950/40 dark:text-fuchsia-300">
+            ${totalRev.toLocaleString(undefined, { maximumFractionDigits: 0 })} first-order rev
+          </span>
         </div>
       </div>
       <table className="w-full text-sm">
-        <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wider text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
+        <thead className="bg-purple-100/50 text-left text-[11px] uppercase tracking-wider text-purple-900 dark:bg-purple-950/30 dark:text-purple-200">
           <tr>
             <th className="px-5 py-2 font-medium">Product</th>
             <th className="px-5 py-2 text-right font-medium">New subs</th>
+            <th className="px-5 py-2 text-right font-medium">Share</th>
             <th className="px-5 py-2 text-right font-medium">First-order rev</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
-            <tr key={r.product} className="border-t border-zinc-100 dark:border-zinc-800">
-              <td className="px-5 py-2 text-zinc-900 dark:text-zinc-100">{r.product}</td>
-              <td className="px-5 py-2 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
-                {r.newSubscriptions.toLocaleString()}
-              </td>
-              <td className="px-5 py-2 text-right tabular-nums text-zinc-700 dark:text-zinc-300">
-                ${r.firstOrderRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-              </td>
-            </tr>
-          ))}
+          {rows.map((r) => {
+            const share = totalSubs > 0 ? (r.newSubscriptions / totalSubs) * 100 : 0;
+            return (
+              <tr key={r.product} className="border-t border-purple-200/60 dark:border-purple-900/40">
+                <td className="px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">{r.product}</td>
+                <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
+                  {r.newSubscriptions.toLocaleString()}
+                </td>
+                <td className="px-5 py-3 text-right tabular-nums text-zinc-500 dark:text-zinc-400">
+                  {share.toFixed(0)}%
+                </td>
+                <td className="px-5 py-3 text-right tabular-nums text-zinc-700 dark:text-zinc-300">
+                  ${r.firstOrderRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -1266,6 +1301,9 @@ export default async function Home({
           />
         </section>
 
+        <h2 className="mt-10 mb-3 text-xl font-semibold uppercase tracking-wider text-zinc-700 dark:text-zinc-300">
+          Subscriptions · Top Recharge Products
+        </h2>
         <section className="mb-6">
           <TopProductsTable rows={data.topSubscriptionProducts} />
         </section>
@@ -1301,9 +1339,16 @@ export default async function Home({
             </div>
             {/* Subtitle on its own row below — text length differences between tabs can't push the tab strip around */}
             <div className="mt-2 text-[11px] text-zinc-500 dark:text-zinc-400">
-              {tab === 'attribution'
-                ? 'Traffic sources · session-level data from ShopifyQL · top 10 by volume (expand for more)'
-                : 'DTC orders only · top 10 by revenue (expand for more) · click-through coming with Layer 3'}
+              {tab === 'attribution' ? (
+                'Traffic sources · session-level data from ShopifyQL · top 10 by volume (expand for more)'
+              ) : (
+                <>
+                  DTC orders only · top 10 by revenue (expand for more) ·{' '}
+                  <span className="font-medium text-sky-700 dark:text-sky-400">
+                    click any page → deep-dive view
+                  </span>
+                </>
+              )}
             </div>
           </div>
           {tab === 'watched' && (

@@ -170,6 +170,8 @@ function Layer2Table({
   metricNoun,
   emptyMessage,
   period,
+  brand,
+  pathKeyed,
   showSessions,
   showRevenue,
 }: {
@@ -177,6 +179,8 @@ function Layer2Table({
   metricNoun: 'orders' | 'units' | 'orders attributed';
   emptyMessage: string;
   period: Period;
+  brand: Brand;
+  pathKeyed: boolean;
   showSessions: boolean;
   showRevenue: boolean;
 }) {
@@ -224,9 +228,33 @@ function Layer2Table({
           const priorForTrend = showRevenue ? r.priorRevenue : r.priorSessions ?? 0;
           const tag = trendTagFor(currentForTrend, priorForTrend);
           return (
-            <tr key={r.key} className="border-t border-zinc-100 dark:border-zinc-800">
+            <tr
+              key={r.key}
+              className={
+                'border-t border-zinc-100 dark:border-zinc-800' +
+                (pathKeyed
+                  ? ' transition-colors hover:bg-sky-50/60 dark:hover:bg-sky-950/20'
+                  : '')
+              }
+            >
               <td className="max-w-md truncate px-5 py-3 text-zinc-900 dark:text-zinc-100">
-                <div className="truncate font-medium">{r.label}</div>
+                {pathKeyed ? (
+                  <Link
+                    href={`/details/${brand}${r.key}?period=${period}`}
+                    className="group inline-flex max-w-full items-center gap-1 truncate font-medium text-sky-700 underline decoration-sky-200 decoration-1 underline-offset-2 hover:decoration-sky-500 dark:text-sky-400 dark:decoration-sky-900 dark:hover:decoration-sky-500"
+                    title="Open page deep-dive"
+                  >
+                    <span className="truncate">{r.label}</span>
+                    <span
+                      className="shrink-0 text-xs text-sky-400 transition group-hover:translate-x-0.5 group-hover:text-sky-700 dark:text-sky-600 dark:group-hover:text-sky-400"
+                      aria-hidden="true"
+                    >
+                      →
+                    </span>
+                  </Link>
+                ) : (
+                  <div className="truncate font-medium">{r.label}</div>
+                )}
                 {r.sublabel && (
                   <div className="truncate text-xs text-zinc-500 dark:text-zinc-400">
                     {r.sublabel}
@@ -345,9 +373,16 @@ export default async function Level2Page({
                 {LAYER2_LABELS[tab]}
               </div>
               <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                {tab === 'attribution'
-                  ? `Traffic sources · session-level data from ShopifyQL · ${brand}`
-                  : `${tab === 'watched' ? 'pages on the watch list' : 'top 100 by revenue'} · DTC orders only · ${brand}`}
+                {tab === 'attribution' ? (
+                  `Traffic sources · session-level data from ShopifyQL · ${brand}`
+                ) : (
+                  <>
+                    {tab === 'watched' ? 'pages on the watch list' : 'top 100 by revenue'} · DTC orders only · {brand} ·{' '}
+                    <span className="font-medium text-sky-700 dark:text-sky-400">
+                      click any page → deep-dive view
+                    </span>
+                  </>
+                )}
               </div>
             </div>
             <PillTabs<Layer2Tab>
@@ -363,6 +398,8 @@ export default async function Level2Page({
             metricNoun={metricNounByTab[tab]}
             emptyMessage={`No ${LAYER2_LABELS[tab].toLowerCase()} data in this period for ${brand}.`}
             period={period}
+            brand={brand}
+            pathKeyed={pathKeyedTabs.has(tab)}
             showSessions={showSessions}
             showRevenue={showRevenue}
           />
