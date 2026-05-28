@@ -30,6 +30,8 @@ export type ClarityPageMetrics = {
   rageClicks: number | null;
   /** Total dead-click count summed across sessions on this path. */
   deadClicks: number | null;
+  /** Total quickback-click count — sessions where user landed and bounced back fast. */
+  quickbackClicks: number | null;
   /** Average scroll depth across sessions on this path (0-100). */
   scrollDepthPct: number | null;
   /** Average session time on this path, in seconds. */
@@ -81,6 +83,7 @@ type Accumulator = {
   sessions: number;
   rageTotal: number; // subTotal summed
   deadTotal: number;
+  quickbackTotal: number;
   scrollDepthWeighted: number; // sum of pct * sessions, divided at the end
   scrollDepthSessions: number;
   timeWeighted: number; // sum of seconds * sessions
@@ -122,11 +125,12 @@ function parseClarityResponse(raw: RawMetric[]): ClarityMetricsMap {
           sessions: 0,
           rageTotal: 0,
           deadTotal: 0,
+          quickbackTotal: 0,
           scrollDepthWeighted: 0,
           scrollDepthSessions: 0,
           timeWeighted: 0,
           timeSessions: 0,
-          urlsCounted: new Set(),
+          urlsCounted: new Set<string>(),
         };
         byPath.set(path, acc);
       }
@@ -145,6 +149,8 @@ function parseClarityResponse(raw: RawMetric[]): ClarityMetricsMap {
         acc.rageTotal += num(row.subTotal);
       } else if (name === 'deadclickcount') {
         acc.deadTotal += num(row.subTotal);
+      } else if (name === 'quickbackclick') {
+        acc.quickbackTotal += num(row.subTotal);
       } else if (name === 'scrolldepth') {
         // Shape: { Url, averageScrollDepth: number }
         const pct = num(row.averageScrollDepth);
@@ -171,6 +177,7 @@ function parseClarityResponse(raw: RawMetric[]): ClarityMetricsMap {
       sessions: acc.sessions > 0 ? acc.sessions : null,
       rageClicks: acc.rageTotal > 0 ? acc.rageTotal : null,
       deadClicks: acc.deadTotal > 0 ? acc.deadTotal : null,
+      quickbackClicks: acc.quickbackTotal > 0 ? acc.quickbackTotal : null,
       scrollDepthPct:
         acc.scrollDepthSessions > 0
           ? acc.scrollDepthWeighted / acc.scrollDepthSessions
