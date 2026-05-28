@@ -148,15 +148,20 @@ export default async function PageDeepDivePage({
   params,
   searchParams,
 }: {
-  params: Promise<{ brand: string; path: string[] }>;
+  params: Promise<{ brand: string; path?: string[] }>;
   searchParams: Promise<{ period?: string }>;
 }) {
   const { brand: brandRaw, path: pathSegments } = await params;
   const sp = await searchParams;
   const brand: Brand = parseBrand(brandRaw);
   const period: Period = parsePeriod(sp.period);
-  // Reconstruct the dashboard-style normalized path from URL segments
-  const path = '/' + pathSegments.join('/');
+  // Optional catch-all: when watched path is '/' (homepage), the URL is
+  // /details/<brand> with no trailing segments → pathSegments is
+  // undefined. Treat empty segments as the storefront root.
+  const path =
+    !pathSegments || pathSegments.length === 0 || pathSegments.join('') === ''
+      ? '/'
+      : '/' + pathSegments.join('/');
 
   const data = await getPageDeepDive(brand, path, period);
   const heatmapUrl = clarityHeatmapUrl(brand, path);
@@ -214,7 +219,7 @@ export default async function PageDeepDivePage({
               {PERIODS.map((p) => (
                 <Link
                   key={p}
-                  href={`/details/${brand}${path}?period=${p}`}
+                  href={`/details/${brand}${path === '/' ? '' : path}?period=${p}`}
                   className={`rounded-full px-3 py-1 text-xs font-medium ${
                     p === period
                       ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'

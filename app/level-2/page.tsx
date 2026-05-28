@@ -240,7 +240,7 @@ function Layer2Table({
               <td className="max-w-md truncate px-5 py-3 text-zinc-900 dark:text-zinc-100">
                 {pathKeyed ? (
                   <Link
-                    href={`/details/${brand}${r.key}?period=${period}`}
+                    href={`/details/${brand}${r.key === '/' ? '' : r.key}?period=${period}`}
                     className="group inline-flex max-w-full items-center gap-1 truncate font-medium text-sky-700 underline decoration-sky-200 decoration-1 underline-offset-2 hover:decoration-sky-500 dark:text-sky-400 dark:decoration-sky-900 dark:hover:decoration-sky-500"
                     title="Open page deep-dive"
                   >
