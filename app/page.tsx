@@ -993,7 +993,13 @@ function Layer2Table({
   );
 }
 
-function TopProductsTable({ rows }: { rows: TopSubProduct[] }) {
+function TopProductsTable({
+  rows,
+  brandNewSubs,
+}: {
+  rows: TopSubProduct[];
+  brandNewSubs: number;
+}) {
   if (rows.length === 0) {
     return (
       <div className="rounded-lg border border-zinc-200 bg-white p-5 text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400">
@@ -1001,10 +1007,17 @@ function TopProductsTable({ rows }: { rows: TopSubProduct[] }) {
       </div>
     );
   }
-  // Total at the bottom so the team can see what "top 5 captured of total"
-  // at a glance — useful for narrative attribution ("most of the surge").
+  // Sum across the displayed top rows — used for the header pill ("X new
+  // subs across top N") and as a fallback denominator when brand-wide
+  // total is unavailable.
   const totalSubs = rows.reduce((s, r) => s + r.newSubscriptions, 0);
   const totalRev = rows.reduce((s, r) => s + r.firstOrderRevenue, 0);
+  // Share denominator: prefer the brand-wide new-subs count (matches the
+  // Layer 1 "New Subscriptions" card). Fall back to top-N total if the
+  // brand metric is missing or somehow smaller than what the top rows
+  // already sum to (data-sync race).
+  const shareDenominator =
+    brandNewSubs > 0 && brandNewSubs >= totalSubs ? brandNewSubs : totalSubs;
   return (
     <div className="overflow-hidden rounded-lg border-2 border-purple-300 bg-purple-50/30 shadow-sm dark:border-purple-900/60 dark:bg-purple-950/10">
       {/* Visual accent: purple top stripe matches the existing subscription
@@ -1036,13 +1049,19 @@ function TopProductsTable({ rows }: { rows: TopSubProduct[] }) {
           <tr>
             <th className="px-5 py-2 font-medium">Product</th>
             <th className="px-5 py-2 text-right font-medium">New subs</th>
-            <th className="px-5 py-2 text-right font-medium">Share</th>
+            <th
+              className="px-5 py-2 text-right font-medium"
+              title="This product's % of all new subscriptions for the brand in the selected period"
+            >
+              Share of brand
+            </th>
             <th className="px-5 py-2 text-right font-medium">First-order rev</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((r) => {
-            const share = totalSubs > 0 ? (r.newSubscriptions / totalSubs) * 100 : 0;
+            const share =
+              shareDenominator > 0 ? (r.newSubscriptions / shareDenominator) * 100 : 0;
             return (
               <tr key={r.product} className="border-t border-purple-200/60 dark:border-purple-900/40">
                 <td className="px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">{r.product}</td>
@@ -1305,7 +1324,10 @@ export default async function Home({
           Subscriptions · Top Recharge Products
         </h2>
         <section className="mb-6">
-          <TopProductsTable rows={data.topSubscriptionProducts} />
+          <TopProductsTable
+            rows={data.topSubscriptionProducts}
+            brandNewSubs={data.newSubscriptions.current}
+          />
         </section>
 
         <h2 className="mt-10 mb-3 text-xl font-semibold uppercase tracking-wider text-zinc-700 dark:text-zinc-300">
