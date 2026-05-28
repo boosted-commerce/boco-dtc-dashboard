@@ -70,16 +70,40 @@ function FrictionCard({
   title,
   value,
   hint,
+  recordingsUrl,
+  recordingsLabel,
+  hasIssue,
 }: {
   title: string;
   value: string;
   hint?: string;
+  recordingsUrl?: string | null;
+  recordingsLabel?: string;
+  hasIssue?: boolean;
 }) {
+  // When there are actual incidents (rage > 0 / dead > 0), accent the
+  // card with rose so it visually pops and add a prominent "View
+  // recordings" button. Otherwise stay neutral.
+  const accent = hasIssue
+    ? 'border-rose-200 bg-rose-50/40 dark:border-rose-900/60 dark:bg-rose-950/10'
+    : 'border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950';
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+    <div className={`rounded-lg border p-4 ${accent}`}>
       <div className="text-[11px] uppercase tracking-wider text-zinc-500 dark:text-zinc-400">{title}</div>
-      <div className="mt-2 text-2xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">{value}</div>
+      <div className={`mt-2 text-2xl font-semibold tabular-nums ${hasIssue ? 'text-rose-700 dark:text-rose-300' : 'text-zinc-900 dark:text-zinc-50'}`}>
+        {value}
+      </div>
       {hint && <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{hint}</div>}
+      {recordingsUrl && (
+        <a
+          href={recordingsUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-rose-700 dark:bg-rose-500 dark:hover:bg-rose-400"
+        >
+          ▶ {recordingsLabel ?? 'View recordings in Clarity'}
+        </a>
+      )}
     </div>
   );
 }
@@ -299,6 +323,9 @@ export default async function PageDeepDivePage({
                   ? 'Repeated rapid clicks — frustration signal'
                   : 'No rage clicks detected'
               }
+              recordingsUrl={(data.clarity?.rageClicks ?? 0) > 0 ? clarityRecordingsUrl(brand, path, 'rage-clicks') : null}
+              recordingsLabel="Watch rage sessions"
+              hasIssue={(data.clarity?.rageClicks ?? 0) > 0}
             />
             <FrictionCard
               title="Dead clicks"
@@ -308,11 +335,17 @@ export default async function PageDeepDivePage({
                   ? 'Clicks on non-interactive elements'
                   : 'No dead clicks detected'
               }
+              recordingsUrl={(data.clarity?.deadClicks ?? 0) > 0 ? clarityRecordingsUrl(brand, path, 'dead-clicks') : null}
+              recordingsLabel="Watch dead-click sessions"
+              hasIssue={(data.clarity?.deadClicks ?? 0) > 0}
             />
             <FrictionCard
               title="Quickback clicks"
               value={data.clarity?.quickbackClicks != null ? data.clarity.quickbackClicks.toLocaleString() : '—'}
               hint="Sessions that bounced back fast"
+              recordingsUrl={(data.clarity?.quickbackClicks ?? 0) > 0 ? clarityRecordingsUrl(brand, path, 'quickback-clicks') : null}
+              recordingsLabel="Watch quickback sessions"
+              hasIssue={(data.clarity?.quickbackClicks ?? 0) > 0}
             />
             <FrictionCard
               title="Avg time on page"
@@ -320,30 +353,6 @@ export default async function PageDeepDivePage({
               hint="Average session duration"
             />
           </div>
-          {(data.clarity?.rageClicks ?? 0) > 0 || (data.clarity?.deadClicks ?? 0) > 0 ? (
-            <div className="mt-3 flex flex-wrap gap-2 text-xs">
-              {(data.clarity?.rageClicks ?? 0) > 0 && (
-                <a
-                  href={clarityRecordingsUrl(brand, path, 'rage-clicks') ?? '#'}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 font-medium text-zinc-700 hover:border-sky-300 hover:text-sky-600 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:border-sky-700 dark:hover:text-sky-400"
-                >
-                  View rage-click recordings →
-                </a>
-              )}
-              {(data.clarity?.deadClicks ?? 0) > 0 && (
-                <a
-                  href={clarityRecordingsUrl(brand, path, 'dead-clicks') ?? '#'}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 font-medium text-zinc-700 hover:border-sky-300 hover:text-sky-600 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:border-sky-700 dark:hover:text-sky-400"
-                >
-                  View dead-click recordings →
-                </a>
-              )}
-            </div>
-          ) : null}
         </section>
 
         {/* Device × source conversion */}
