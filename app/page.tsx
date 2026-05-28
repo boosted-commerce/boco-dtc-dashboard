@@ -10,7 +10,6 @@ import {
   type Brand,
   type Bucket,
   type ChannelMix as ChannelMixData,
-  type DailyPoint,
   type Period,
   type SourceFilter,
   type SubBucket,
@@ -33,116 +32,16 @@ import { getClarityMetrics, type ClarityMetricsMap } from '@/lib/clarity-metrics
 import { findIntelligemsTest } from '@/lib/intelligems-tests';
 import { StarButton } from '@/app/_components/star-button';
 import { AddWatchedInput } from '@/app/_components/add-watched-input';
+import { Sparkline, type SparklineMarker } from '@/app/_components/sparkline';
+import { fmt, type Format } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
-
-type Format = 'count' | 'currency' | 'aov' | 'percent';
-
-const fmt = (n: number, kind: Format): string => {
-  if (kind === 'count') return Math.round(n).toLocaleString();
-  if (kind === 'currency')
-    return `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
-  if (kind === 'aov')
-    return `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  return `${n.toFixed(1)}%`;
-};
 
 const pctChange = (current: number, prior: number): number | null => {
   if (prior === 0) return null;
   return ((current - prior) / prior) * 100;
 };
-
-// Vertical date markers rendered over the sparkline, used to show
-// promo start/end dates so the team can visually correlate metric
-// shifts with what's running.
-type SparklineMarker = { date: string; kind: 'start' | 'end'; label: string };
-
-function Sparkline({
-  points,
-  className = '',
-  width = 240,
-  height = 48,
-  markers,
-}: {
-  points: DailyPoint[];
-  className?: string;
-  width?: number;
-  height?: number;
-  markers?: SparklineMarker[];
-}) {
-  if (points.length < 2) {
-    return <div className={`h-12 ${className}`} aria-hidden="true" />;
-  }
-  const values = points.map((p) => p.value);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = max - min || 1;
-  const pad = 3;
-  const innerW = width - pad * 2;
-  const innerH = height - pad * 2;
-  const stepX = innerW / (values.length - 1);
-  const coords = values.map((v, i) => {
-    const x = pad + i * stepX;
-    const y = pad + innerH - ((v - min) / range) * innerH;
-    return [x, y] as const;
-  });
-  const linePath = coords
-    .map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`)
-    .join(' ');
-  const areaPath = `${linePath} L${coords[coords.length - 1][0].toFixed(1)},${height - pad} L${coords[0][0].toFixed(1)},${height - pad} Z`;
-  const [lastX, lastY] = coords[coords.length - 1];
-
-  // Map promo-date markers to x-positions by matching against the
-  // sparkline's date axis. Markers for dates outside the window are
-  // skipped silently.
-  const markerLines = (markers ?? []).flatMap((m) => {
-    const idx = points.findIndex((p) => p.date === m.date);
-    if (idx < 0) return [];
-    const x = pad + idx * stepX;
-    return [{ x, kind: m.kind, label: m.label }];
-  });
-
-  return (
-    <svg
-      viewBox={`0 0 ${width} ${height}`}
-      preserveAspectRatio="none"
-      className={`w-full ${className}`}
-      style={{ height }}
-      aria-hidden="true"
-    >
-      <path d={areaPath} fill="currentColor" opacity="0.08" />
-      {/* Promo markers — vertical amber dashed line + small flag at
-          the top of the chart. Render BEFORE the line path so the
-          metric trend sits on top of the markers visually. */}
-      {markerLines.map((m, i) => (
-        <g key={`marker-${i}`}>
-          <line
-            x1={m.x.toFixed(1)}
-            x2={m.x.toFixed(1)}
-            y1={pad}
-            y2={height - pad}
-            stroke={m.kind === 'start' ? '#f59e0b' : '#a8a29e'}
-            strokeWidth="1"
-            strokeDasharray="2,2"
-            opacity="0.6"
-          >
-            <title>{m.label}</title>
-          </line>
-        </g>
-      ))}
-      <path
-        d={linePath}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-        strokeLinecap="round"
-      />
-      <circle cx={lastX.toFixed(1)} cy={lastY.toFixed(1)} r="2.5" fill="currentColor" />
-    </svg>
-  );
-}
 
 // Convert the brand's promo list into sparkline markers (start + end
 // dates within the daily-point window get a vertical line).
@@ -231,7 +130,7 @@ function MetricCard({
         <ChangeChip current={bucket.current} prior={bucket.prior} label="vs prior period" />
       </div>
       <div className={`mt-3 ${sparklineColor}`}>
-        <Sparkline points={bucket.daily} markers={markers} />
+        <Sparkline points={bucket.daily} kind={kind} markers={markers} />
       </div>
       <div className="mt-3 grid grid-cols-3 gap-2 border-t border-zinc-100 pt-3 dark:border-zinc-800">
         <Tiny label="Yesterday" value={fmt(bucket.yesterday, kind)} />
@@ -270,7 +169,7 @@ function SubMetricCard({
         <ChangeChip current={bucket.current} prior={bucket.prior} label="vs prior period" />
       </div>
       <div className={`mt-3 ${sparklineColor}`}>
-        <Sparkline points={bucket.daily} markers={markers} />
+        <Sparkline points={bucket.daily} kind={kind} markers={markers} />
       </div>
     </div>
   );
@@ -974,7 +873,7 @@ function Layer2Table({
               {showRevenue && (
                 <td className="px-5 py-3">
                   <div className="w-32 text-emerald-600 dark:text-emerald-400">
-                    <Sparkline points={r.daily} height={28} />
+                    <Sparkline points={r.daily} height={28} interactive={false} />
                   </div>
                 </td>
               )}
