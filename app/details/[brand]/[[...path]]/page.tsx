@@ -304,6 +304,16 @@ export default async function PageDeepDivePage({
 
         {/* Clarity friction signals */}
         <section className="mb-6">
+          {data.clarity === null && (
+            <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+              <span className="font-semibold">No Clarity data for this URL in the last 3 days.</span>{' '}
+              Common causes: (1) the storefront Clarity tracking script isn&rsquo;t
+              installed in <code className="rounded bg-amber-100 px-1 py-0.5 font-mono text-[11px] dark:bg-amber-900/40">theme.liquid</code>{' '}
+              (check Shopify Admin → Themes → Edit code), or (2) the page had
+              very few sessions in the Clarity window. HHH and VIV currently
+              track the full storefront; PRL only tracks checkout pages.
+            </div>
+          )}
           <div className="mb-2 flex items-baseline justify-between">
             <h2 className="text-sm font-medium uppercase tracking-wider text-zinc-700 dark:text-zinc-300">
               Friction signals (3-day Clarity window)
