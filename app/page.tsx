@@ -28,7 +28,7 @@ import { getWatchedPaths } from '@/lib/watched-store';
 import { getActivePromos, getPromosInWindow, type Promo } from '@/lib/queries/promos';
 import { getNorthbeamSummary, type NorthbeamSummary } from '@/lib/queries/northbeam';
 import { getNarrative } from '@/lib/queries/narrative';
-import { clarityHeatmapUrl } from '@/lib/clarity';
+import { clarityHeatmapUrl, clarityRecordingsUrl } from '@/lib/clarity';
 import { getClarityMetrics, type ClarityMetricsMap } from '@/lib/clarity-metrics';
 import { findIntelligemsTest } from '@/lib/intelligems-tests';
 import { StarButton } from '@/app/_components/star-button';
@@ -973,13 +973,25 @@ function Layer2Table({
                 const m = clarityMetrics.get(r.key);
                 const dash = <span className="text-zinc-300 dark:text-zinc-600">—</span>;
                 const fmtSecs = (s: number) => (s >= 60 ? `${Math.round(s / 60)}m ${Math.round(s % 60)}s` : `${Math.round(s)}s`);
+                const rageUrl = m?.rageClicks ? clarityRecordingsUrl(brand, r.key, 'rage-clicks') : null;
+                const deadUrl = m?.deadClicks ? clarityRecordingsUrl(brand, r.key, 'dead-clicks') : null;
+                const linkClass =
+                  'underline decoration-zinc-300 underline-offset-2 hover:text-sky-600 hover:decoration-sky-500 dark:decoration-zinc-700 dark:hover:text-sky-400 dark:hover:decoration-sky-500';
                 return (
                   <>
                     <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
-                      {m?.rageClicks != null ? m.rageClicks.toLocaleString() : dash}
+                      {m?.rageClicks != null
+                        ? rageUrl
+                          ? <a href={rageUrl} target="_blank" rel="noopener noreferrer" title="View rage-click sessions in Clarity" className={linkClass}>{m.rageClicks.toLocaleString()}</a>
+                          : m.rageClicks.toLocaleString()
+                        : dash}
                     </td>
                     <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
-                      {m?.deadClicks != null ? m.deadClicks.toLocaleString() : dash}
+                      {m?.deadClicks != null
+                        ? deadUrl
+                          ? <a href={deadUrl} target="_blank" rel="noopener noreferrer" title="View dead-click sessions in Clarity" className={linkClass}>{m.deadClicks.toLocaleString()}</a>
+                          : m.deadClicks.toLocaleString()
+                        : dash}
                     </td>
                     <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
                       {m?.scrollDepthPct != null ? `${Math.round(m.scrollDepthPct)}%` : dash}
