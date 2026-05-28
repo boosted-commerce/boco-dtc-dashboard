@@ -181,6 +181,136 @@ Write 3-5 sentences (max 110 words total) covering:
 Style: factual, concrete, no hype, no hedging, no bullet points, no markdown. Use specific numbers and named entities (channel/product/page names) from the data. Don't recommend actions unless the data strongly supports one. Write as plain prose.`;
 }
 
+// Per-page narrative — same model, page-scoped prompt. Different
+// cache key so brand-level and page-level narratives don't collide.
+export async function getPageNarrative(args: {
+  brand: Brand;
+  period: Period;
+  path: string;
+  sessions: { current: number; prior: number };
+  convRate: { current: number; prior: number };
+  orderCount: { current: number; prior: number };
+  revenue: { current: number; prior: number };
+  deviceSource: {
+    deviceType: string;
+    source: string;
+    sessions: number;
+    convRate: number;
+    priorConvRate: number;
+  }[];
+  clarity: {
+    rageClicks: number | null;
+    deadClicks: number | null;
+    quickbackClicks: number | null;
+    scrollDepthPct: number | null;
+    avgTimeSeconds: number | null;
+  } | null;
+  activePromos: Promo[];
+  intelligemsRole: 'origin' | 'destination' | null;
+}): Promise<string | null> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return null;
+
+  const redis = getRedis();
+  const key = `narrative:page:${args.brand}:${args.period}:${encodeURIComponent(args.path)}:v1`;
+
+  if (redis) {
+    try {
+      const cached = await redis.get<string>(key);
+      if (cached) return cached;
+    } catch { /* fall through */ }
+  }
+
+  // Build per-page prompt with all the context Claude needs to
+  // identify what's actually happening on this URL specifically.
+  const topDevices = args.deviceSource
+    .slice(0, 6)
+    .map((d) => {
+      const drop = d.priorConvRate > 0 && d.convRate < d.priorConvRate * 0.8;
+      const surge = d.priorConvRate > 0 && d.convRate > d.priorConvRate * 1.2;
+      return `  - ${d.deviceType} · ${d.source}: ${d.sessions.toLocaleString()} sessions, ${d.convRate.toFixed(2)}% conv${
+        drop ? ' (↓ vs prior — friction signal)' : surge ? ' (↑ vs prior)' : ''
+      }`;
+    })
+    .join('\n');
+
+  const clarityLines = args.clarity
+    ? `Friction signals (3-day Clarity window):
+  - Rage clicks: ${args.clarity.rageClicks ?? 0}
+  - Dead clicks: ${args.clarity.deadClicks ?? 0}
+  - Quickback clicks: ${args.clarity.quickbackClicks ?? 0}
+  - Avg scroll depth: ${args.clarity.scrollDepthPct != null ? Math.round(args.clarity.scrollDepthPct) + '%' : 'n/a'}
+  - Avg time on page: ${args.clarity.avgTimeSeconds != null ? Math.round(args.clarity.avgTimeSeconds) + 's' : 'n/a'}`
+    : 'Clarity friction signals: not available for this page.';
+
+  const promoLines = args.activePromos
+    .filter((p) => p.state === 'active')
+    .slice(0, 5)
+    .map((p) => `  - "${p.name}" (${p.discountType ?? '?'}, ends ${p.endDate})`)
+    .join('\n');
+
+  const intelligemsNote = args.intelligemsRole
+    ? `This URL is currently the ${args.intelligemsRole} of an active Intelligems A/B test.`
+    : '';
+
+  const prompt = `You are writing a focused narrative for a single landing page on the Boosted Commerce DTC dashboard. The audience is the operator who clicked into this page to understand what's happening on it.
+
+PAGE: ${args.path} · BRAND: ${args.brand} · WINDOW: last ${args.period} days
+${intelligemsNote}
+
+CORE METRICS (current vs prior ${args.period}-day window):
+  - Sessions: ${args.sessions.current.toLocaleString()}${args.sessions.prior > 0 ? ` (was ${args.sessions.prior.toLocaleString()})` : ''}
+  - Same-session conv rate: ${args.convRate.current.toFixed(2)}%
+  - Orders: ${args.orderCount.current.toLocaleString()}${args.orderCount.prior > 0 ? ` (was ${args.orderCount.prior.toLocaleString()})` : ''}
+  - Revenue: $${args.revenue.current.toFixed(0)}${args.revenue.prior > 0 ? ` (was $${args.revenue.prior.toFixed(0)})` : ''}
+
+WHERE CONVERSION CONCENTRATES (device × source, top 6 by sessions):
+${topDevices || '  (no breakdown data)'}
+
+${clarityLines}
+
+ACTIVE PROMOS (brand-level — may or may not affect this page):
+${promoLines || 'No active promos.'}
+
+INSTRUCTIONS:
+Write 3-5 sentences (max 110 words total) that:
+1. Lead with the single most notable thing about THIS page in this window (the metric shift, the friction signal, or the segment imbalance)
+2. Attribute it to a specific cause grounded in the data: a device/source segment ("conversion has fallen to 0.4% on mobile from Meta"), a Clarity signal ("12 rage-click sessions concentrated on this URL"), an active promo (if relevant), or the Intelligems test if this page is in one
+3. Call out one thing worth attention — a specific friction point, a segment opportunity, or a divergence
+
+Style: factual, concrete, no hype, no hedging, no bullet points or markdown. Use specific numbers and named segments from the data. Don't recommend actions unless the data strongly supports one. If a metric is "new" (no prior data), say so explicitly rather than implying it shifted.`;
+
+  try {
+    const res = await fetch(ANTHROPIC_API_URL, {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: 300,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      console.error('Anthropic page narrative API error', res.status, errText.slice(0, 500));
+      return null;
+    }
+    const json = (await res.json()) as { content?: Array<{ type: string; text?: string }> };
+    const text = json.content?.find((c) => c.type === 'text')?.text?.trim() ?? null;
+    if (text && redis) {
+      try { await redis.set(key, text, { ex: CACHE_TTL_SECONDS }); } catch {}
+    }
+    return text;
+  } catch (err) {
+    console.error('Page narrative fetch failed:', err);
+    return null;
+  }
+}
+
 export async function getNarrative(args: {
   brand: Brand;
   period: Period;
