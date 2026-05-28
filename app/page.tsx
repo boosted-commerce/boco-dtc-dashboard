@@ -882,7 +882,20 @@ function Layer2Table({
               )}
               <td className="max-w-md truncate px-5 py-3 text-zinc-900 dark:text-zinc-100">
                 <div className="flex items-center gap-1.5">
-                  <span className="truncate font-medium">{r.label}</span>
+                  {/* For path-keyed tabs the row label is the path itself —
+                      link to the Layer 3 deep-dive for that page. Non-path
+                      tabs (Top Products, Channel Attribution) keep the
+                      plain label since there's no per-path drill-down. */}
+                  {starrable ? (
+                    <Link
+                      href={`/details/${brand}${r.key}?period=${period}`}
+                      className="truncate font-medium hover:text-sky-600 hover:underline dark:hover:text-sky-400"
+                    >
+                      {r.label}
+                    </Link>
+                  ) : (
+                    <span className="truncate font-medium">{r.label}</span>
+                  )}
                   {heatmapUrl && (
                     <a
                       href={heatmapUrl}

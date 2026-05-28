@@ -197,6 +197,85 @@ export async function getSessionTimeSeries(
   });
 }
 
+// Device × source breakdown for a single landing page. Used by the
+// Layer 3 deep-dive view so we can show where conversion concentrates
+// (e.g. "Mobile from Meta converts at 0.4% but Desktop Google at 4.1%").
+// Returns rows for both current and prior windows so vs-prior arrows
+// can be computed in the UI.
+export type DeviceSourceRow = {
+  deviceType: string;
+  source: string;
+  sessions: number;
+  convRate: number; // percent
+  priorSessions: number;
+  priorConvRate: number;
+};
+
+export async function getDeviceSourceByPath(
+  brand: Brand,
+  path: string,
+  period: Period,
+): Promise<DeviceSourceRow[]> {
+  // Group by all 3 dimensions and filter in JS — ShopifyQL doesn't
+  // support WHERE clauses on this query type. LIMIT 1000 should
+  // comfortably cover any single brand's session shape over 28 days.
+  const [cur, prior] = await Promise.all([
+    runShopifyQL(
+      brand,
+      `FROM sessions SHOW sessions, conversion_rate GROUP BY device_type, referrer_source, landing_page_path SINCE -${period}d UNTIL today ORDER BY sessions DESC LIMIT 1000`,
+    ),
+    runShopifyQL(
+      brand,
+      `FROM sessions SHOW sessions, conversion_rate GROUP BY device_type, referrer_source, landing_page_path SINCE -${period * 2}d UNTIL -${period}d ORDER BY sessions DESC LIMIT 1000`,
+    ),
+  ]);
+  if (!cur) return [];
+
+  // Aggregate (device, source) per the requested path. Multiple URL
+  // variants (srsltid, utm) collapse to the same normalized path.
+  // Note: we use landing_page_path here, not landing_page_url — fixed
+  // earlier to avoid srsltid fragmentation.
+  const accumulate = (
+    table: { rows: RawRow[] } | null,
+  ): Map<string, { sessions: number; ordersImplied: number }> => {
+    const map = new Map<string, { sessions: number; ordersImplied: number }>();
+    if (!table) return map;
+    for (const r of table.rows) {
+      const rowPath = String(r.landing_page_path ?? '');
+      if (rowPath !== path) continue;
+      const device = String(r.device_type ?? '(unknown)');
+      const source = String(r.referrer_source ?? '(none)');
+      const sessions = Number(r.sessions) || 0;
+      const cr = Number(r.conversion_rate) || 0;
+      const key = `${device}|${source}`;
+      const existing = map.get(key) ?? { sessions: 0, ordersImplied: 0 };
+      existing.sessions += sessions;
+      existing.ordersImplied += sessions * cr;
+      map.set(key, existing);
+    }
+    return map;
+  };
+
+  const curMap = accumulate(cur);
+  const priorMap = accumulate(prior);
+
+  const rows: DeviceSourceRow[] = [];
+  for (const [key, c] of curMap) {
+    const [deviceType, source] = key.split('|');
+    const p = priorMap.get(key) ?? { sessions: 0, ordersImplied: 0 };
+    rows.push({
+      deviceType,
+      source,
+      sessions: c.sessions,
+      convRate: c.sessions > 0 ? (c.ordersImplied / c.sessions) * 100 : 0,
+      priorSessions: p.sessions,
+      priorConvRate: p.sessions > 0 ? (p.ordersImplied / p.sessions) * 100 : 0,
+    });
+  }
+  rows.sort((a, b) => b.sessions - a.sessions);
+  return rows;
+}
+
 export async function getChannelSessions(
   brand: Brand,
   period: Period,
