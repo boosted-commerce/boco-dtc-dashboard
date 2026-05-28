@@ -1343,8 +1343,9 @@ export default async function Home({
                 'Traffic sources · session-level data from ShopifyQL · top 10 by volume (expand for more)'
               ) : (
                 <>
-                  DTC orders only · top 10 by revenue (expand for more) ·{' '}
-                  <span className="font-medium text-sky-700 dark:text-sky-400">
+                  DTC orders only · top 10 by revenue (expand for more){' '}
+                  <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 font-semibold text-sky-700 dark:bg-sky-950/60 dark:text-sky-300">
+                    <span aria-hidden="true">👉</span>
                     click any page → deep-dive view
                   </span>
                 </>

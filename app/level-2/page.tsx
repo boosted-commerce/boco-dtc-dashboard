@@ -377,8 +377,9 @@ export default async function Level2Page({
                   `Traffic sources · session-level data from ShopifyQL · ${brand}`
                 ) : (
                   <>
-                    {tab === 'watched' ? 'pages on the watch list' : 'top 100 by revenue'} · DTC orders only · {brand} ·{' '}
-                    <span className="font-medium text-sky-700 dark:text-sky-400">
+                    {tab === 'watched' ? 'pages on the watch list' : 'top 100 by revenue'} · DTC orders only · {brand}{' '}
+                    <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 font-semibold text-sky-700 dark:bg-sky-950/60 dark:text-sky-300">
+                      <span aria-hidden="true">👉</span>
                       click any page → deep-dive view
                     </span>
                   </>
