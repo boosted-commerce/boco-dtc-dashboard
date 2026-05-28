@@ -873,7 +873,7 @@ function Layer2Table({
               {showRevenue && (
                 <td className="px-5 py-3">
                   <div className="w-32 text-emerald-600 dark:text-emerald-400">
-                    <Sparkline points={r.daily} height={28} interactive={false} />
+                    <Sparkline points={r.daily} kind="currency" height={28} showPeak={false} />
                   </div>
                 </td>
               )}

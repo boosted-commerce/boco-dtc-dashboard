@@ -17,6 +17,7 @@ export function Sparkline({
   height = 48,
   markers,
   interactive = true,
+  showPeak = interactive,
 }: {
   points: DailyPoint[];
   // Used to format the hover tooltip's value identically to the card.
@@ -25,9 +26,13 @@ export function Sparkline({
   width?: number;
   height?: number;
   markers?: SparklineMarker[];
-  // When false, render a plain static line (no peak dot, no hover) —
-  // used for the dense Layer 2 table rows where extra marks add noise.
+  // Enables the hover tooltip + cursor guide. Disable for a fully
+  // static line.
   interactive?: boolean;
+  // Always-visible peak dot. Defaults to `interactive` but can be set
+  // independently — e.g. the dense Layer 2 table rows want hover
+  // tooltips (interactive) without a halo on every row (showPeak off).
+  showPeak?: boolean;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<number | null>(null);
@@ -126,16 +131,15 @@ export function Sparkline({
           strokeLinecap="round"
         />
         {/* Always-visible peak dot (with a faint halo) so the high point
-            stands out at rest. Only when interactive — the dense table
-            rows stay plain. */}
-        {interactive && (
+            stands out at rest. */}
+        {showPeak && (
           <>
             <circle cx={peakX.toFixed(1)} cy={peakY.toFixed(1)} r="5" fill="currentColor" opacity="0.15" />
             <circle cx={peakX.toFixed(1)} cy={peakY.toFixed(1)} r="2.5" fill="currentColor" />
           </>
         )}
         {/* Latest-day dot. */}
-        <circle cx={lastX.toFixed(1)} cy={lastY.toFixed(1)} r="2.5" fill="currentColor" opacity={interactive ? 0.5 : 1} />
+        <circle cx={lastX.toFixed(1)} cy={lastY.toFixed(1)} r="2.5" fill="currentColor" opacity={showPeak ? 0.5 : 1} />
         {/* Hover guide line + dot. */}
         {active !== null && (
           <>
