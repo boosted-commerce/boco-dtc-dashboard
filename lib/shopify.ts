@@ -197,13 +197,13 @@ export async function getSessionTimeSeries(
   });
 }
 
-// Device × source breakdown for a single landing page. Used by the
-// Layer 3 deep-dive view so we can show where conversion concentrates
-// (e.g. "Mobile from Meta converts at 0.4% but Desktop Google at 4.1%").
-// Returns rows for both current and prior windows so vs-prior arrows
-// can be computed in the UI.
-export type DeviceSourceRow = {
-  deviceType: string;
+// Source breakdown for a single landing page. ShopifyQL's sessions
+// table doesn't expose device info (confirmed via probe — device_type,
+// device_category, device, client_type all return "Column Not Found"),
+// so this is source-only. Used by the Layer 3 deep-dive view to show
+// where conversion concentrates (e.g. "Meta: 3,200 sessions @ 0.4%
+// vs Direct: 1,400 @ 2.8%").
+export type SourceBreakdownRow = {
   source: string;
   sessions: number;
   convRate: number; // percent
@@ -211,30 +211,23 @@ export type DeviceSourceRow = {
   priorConvRate: number;
 };
 
-export async function getDeviceSourceByPath(
+export async function getSourceByPath(
   brand: Brand,
   path: string,
   period: Period,
-): Promise<DeviceSourceRow[]> {
-  // Group by all 3 dimensions and filter in JS — ShopifyQL doesn't
-  // support WHERE clauses on this query type. LIMIT 1000 should
-  // comfortably cover any single brand's session shape over 28 days.
+): Promise<SourceBreakdownRow[]> {
   const [cur, prior] = await Promise.all([
     runShopifyQL(
       brand,
-      `FROM sessions SHOW sessions, conversion_rate GROUP BY device_type, referrer_source, landing_page_path SINCE -${period}d UNTIL today ORDER BY sessions DESC LIMIT 1000`,
+      `FROM sessions SHOW sessions, conversion_rate GROUP BY referrer_source, landing_page_path SINCE -${period}d UNTIL today ORDER BY sessions DESC LIMIT 1000`,
     ),
     runShopifyQL(
       brand,
-      `FROM sessions SHOW sessions, conversion_rate GROUP BY device_type, referrer_source, landing_page_path SINCE -${period * 2}d UNTIL -${period}d ORDER BY sessions DESC LIMIT 1000`,
+      `FROM sessions SHOW sessions, conversion_rate GROUP BY referrer_source, landing_page_path SINCE -${period * 2}d UNTIL -${period}d ORDER BY sessions DESC LIMIT 1000`,
     ),
   ]);
   if (!cur) return [];
 
-  // Aggregate (device, source) per the requested path. Multiple URL
-  // variants (srsltid, utm) collapse to the same normalized path.
-  // Note: we use landing_page_path here, not landing_page_url — fixed
-  // earlier to avoid srsltid fragmentation.
   const accumulate = (
     table: { rows: RawRow[] } | null,
   ): Map<string, { sessions: number; ordersImplied: number }> => {
@@ -243,15 +236,13 @@ export async function getDeviceSourceByPath(
     for (const r of table.rows) {
       const rowPath = String(r.landing_page_path ?? '');
       if (rowPath !== path) continue;
-      const device = String(r.device_type ?? '(unknown)');
-      const source = String(r.referrer_source ?? '(none)');
+      const source = String(r.referrer_source ?? '(direct)');
       const sessions = Number(r.sessions) || 0;
       const cr = Number(r.conversion_rate) || 0;
-      const key = `${device}|${source}`;
-      const existing = map.get(key) ?? { sessions: 0, ordersImplied: 0 };
+      const existing = map.get(source) ?? { sessions: 0, ordersImplied: 0 };
       existing.sessions += sessions;
       existing.ordersImplied += sessions * cr;
-      map.set(key, existing);
+      map.set(source, existing);
     }
     return map;
   };
@@ -259,12 +250,10 @@ export async function getDeviceSourceByPath(
   const curMap = accumulate(cur);
   const priorMap = accumulate(prior);
 
-  const rows: DeviceSourceRow[] = [];
-  for (const [key, c] of curMap) {
-    const [deviceType, source] = key.split('|');
-    const p = priorMap.get(key) ?? { sessions: 0, ordersImplied: 0 };
+  const rows: SourceBreakdownRow[] = [];
+  for (const [source, c] of curMap) {
+    const p = priorMap.get(source) ?? { sessions: 0, ordersImplied: 0 };
     rows.push({
-      deviceType,
       source,
       sessions: c.sessions,
       convRate: c.sessions > 0 ? (c.ordersImplied / c.sessions) * 100 : 0,

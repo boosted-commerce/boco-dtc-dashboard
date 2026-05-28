@@ -172,7 +172,7 @@ export default async function PageDeepDivePage({
     convRate: data.convRate,
     orderCount: data.orderCount,
     revenue: data.revenue,
-    deviceSource: data.deviceSource,
+    sourceBreakdown: data.sourceBreakdown,
     clarity: data.clarity,
     activePromos: data.activePromos,
     intelligemsRole: data.intelligemsTest?.role ?? null,
@@ -355,42 +355,44 @@ export default async function PageDeepDivePage({
           </div>
         </section>
 
-        {/* Device × source conversion */}
+        {/* Source breakdown for this page.
+            ShopifyQL doesn't expose device info on its sessions table
+            (confirmed via probe), so this is source-only. The "where
+            conversion concentrates" framing still works at the source
+            level — Meta vs Google vs Direct etc. */}
         <section className="mb-6 overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
           <div className="border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
             <div className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              Device × source conversion
+              Source breakdown
             </div>
             <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
-              Where conversion concentrates · {period}-day window
+              Where conversion concentrates on this page · {period}-day window
             </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wider text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
                 <tr>
-                  <th className="px-5 py-2 font-medium">Device · Source</th>
+                  <th className="px-5 py-2 font-medium">Source</th>
                   <th className="px-5 py-2 text-right font-medium">Sessions</th>
                   <th className="px-5 py-2 text-right font-medium">Conv rate</th>
                   <th className="px-5 py-2 text-right font-medium">vs prior</th>
                 </tr>
               </thead>
               <tbody>
-                {data.deviceSource.length === 0 ? (
+                {data.sourceBreakdown.length === 0 ? (
                   <tr>
                     <td colSpan={4} className="px-5 py-6 text-center text-sm text-zinc-500 dark:text-zinc-400">
-                      No device/source breakdown available for this page in the {period}-day window.
+                      No source breakdown available for this page in the {period}-day window.
                     </td>
                   </tr>
                 ) : (
-                  data.deviceSource.slice(0, 12).map((r) => {
+                  data.sourceBreakdown.slice(0, 12).map((r) => {
                     const change = pctChange(r.convRate, r.priorConvRate);
                     return (
-                      <tr key={`${r.deviceType}|${r.source}`} className="border-t border-zinc-100 dark:border-zinc-800">
-                        <td className="px-5 py-3 text-zinc-900 dark:text-zinc-100">
-                          <span className="font-medium">{r.deviceType}</span>
-                          <span className="text-zinc-400 dark:text-zinc-500"> · </span>
-                          <span>{r.source}</span>
+                      <tr key={r.source} className="border-t border-zinc-100 dark:border-zinc-800">
+                        <td className="px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">
+                          {r.source || '(direct)'}
                         </td>
                         <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
                           {fmtCount(r.sessions)}

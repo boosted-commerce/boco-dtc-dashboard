@@ -28,7 +28,7 @@ import { getWatchedPaths } from '@/lib/watched-store';
 import { getActivePromos, getPromosInWindow, type Promo } from '@/lib/queries/promos';
 import { getNorthbeamSummary, type NorthbeamSummary } from '@/lib/queries/northbeam';
 import { getNarrative } from '@/lib/queries/narrative';
-import { clarityHeatmapUrl, clarityRecordingsUrl } from '@/lib/clarity';
+import { clarityHeatmapUrl } from '@/lib/clarity';
 import { getClarityMetrics, type ClarityMetricsMap } from '@/lib/clarity-metrics';
 import { findIntelligemsTest } from '@/lib/intelligems-tests';
 import { StarButton } from '@/app/_components/star-button';
@@ -777,8 +777,6 @@ function Layer2Table({
   starrable,
   showSessions,
   showRevenue,
-  showClarityMetrics,
-  clarityMetrics,
 }: {
   rows: Layer2Row[];
   metricNoun: 'orders' | 'units' | 'orders attributed';
@@ -789,8 +787,6 @@ function Layer2Table({
   starrable: boolean;
   showSessions: boolean;
   showRevenue: boolean;
-  showClarityMetrics: boolean;
-  clarityMetrics: ClarityMetricsMap;
 }) {
   if (rows.length === 0) {
     return (
@@ -823,34 +819,6 @@ function Layer2Table({
           <th className="px-5 py-2 text-right font-medium">{metricNoun}</th>
           {showRevenue && <th className="px-5 py-2 text-right font-medium">Sub</th>}
           {showRevenue && <th className="px-5 py-2 text-right font-medium">Revenue</th>}
-          {showClarityMetrics && (
-            <>
-              <th
-                className="px-5 py-2 text-right font-medium"
-                title="Sessions in the last 3 days where Clarity recorded rapid repeated clicks indicating user frustration"
-              >
-                Rage
-              </th>
-              <th
-                className="px-5 py-2 text-right font-medium"
-                title="Sessions in the last 3 days where Clarity recorded clicks on non-interactive elements"
-              >
-                Dead clicks
-              </th>
-              <th
-                className="px-5 py-2 text-right font-medium"
-                title="Average scroll depth across recent sessions (0-100)"
-              >
-                Scroll %
-              </th>
-              <th
-                className="px-5 py-2 text-right font-medium"
-                title="Average time on page across recent sessions"
-              >
-                Avg time
-              </th>
-            </>
-          )}
           <th className="px-5 py-2 text-right font-medium">vs prior</th>
           {showRevenue && (
             <th className="px-5 py-2 font-medium">{period}-day trend</th>
@@ -889,9 +857,16 @@ function Layer2Table({
                   {starrable ? (
                     <Link
                       href={`/details/${brand}${r.key}?period=${period}`}
-                      className="truncate font-medium hover:text-sky-600 hover:underline dark:hover:text-sky-400"
+                      className="group inline-flex max-w-full items-center gap-1 truncate font-medium text-sky-700 underline decoration-sky-200 decoration-1 underline-offset-2 hover:decoration-sky-500 dark:text-sky-400 dark:decoration-sky-900 dark:hover:decoration-sky-500"
+                      title="Open page deep-dive"
                     >
-                      {r.label}
+                      <span className="truncate">{r.label}</span>
+                      <span
+                        className="shrink-0 text-xs text-sky-400 transition group-hover:translate-x-0.5 group-hover:text-sky-700 dark:text-sky-600 dark:group-hover:text-sky-400"
+                        aria-hidden="true"
+                      >
+                        →
+                      </span>
                     </Link>
                   ) : (
                     <span className="truncate font-medium">{r.label}</span>
@@ -982,39 +957,9 @@ function Layer2Table({
                   ${r.currentRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                 </td>
               )}
-              {showClarityMetrics && (() => {
-                const m = clarityMetrics.get(r.key);
-                const dash = <span className="text-zinc-300 dark:text-zinc-600">—</span>;
-                const fmtSecs = (s: number) => (s >= 60 ? `${Math.round(s / 60)}m ${Math.round(s % 60)}s` : `${Math.round(s)}s`);
-                const rageUrl = m?.rageClicks ? clarityRecordingsUrl(brand, r.key, 'rage-clicks') : null;
-                const deadUrl = m?.deadClicks ? clarityRecordingsUrl(brand, r.key, 'dead-clicks') : null;
-                const linkClass =
-                  'underline decoration-zinc-300 underline-offset-2 hover:text-sky-600 hover:decoration-sky-500 dark:decoration-zinc-700 dark:hover:text-sky-400 dark:hover:decoration-sky-500';
-                return (
-                  <>
-                    <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
-                      {m?.rageClicks != null
-                        ? rageUrl
-                          ? <a href={rageUrl} target="_blank" rel="noopener noreferrer" title="View rage-click sessions in Clarity" className={linkClass}>{m.rageClicks.toLocaleString()}</a>
-                          : m.rageClicks.toLocaleString()
-                        : dash}
-                    </td>
-                    <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
-                      {m?.deadClicks != null
-                        ? deadUrl
-                          ? <a href={deadUrl} target="_blank" rel="noopener noreferrer" title="View dead-click sessions in Clarity" className={linkClass}>{m.deadClicks.toLocaleString()}</a>
-                          : m.deadClicks.toLocaleString()
-                        : dash}
-                    </td>
-                    <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
-                      {m?.scrollDepthPct != null ? `${Math.round(m.scrollDepthPct)}%` : dash}
-                    </td>
-                    <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
-                      {m?.avgTimeSeconds != null ? fmtSecs(m.avgTimeSeconds) : dash}
-                    </td>
-                  </>
-                );
-              })()}
+{/* Clarity metric columns lived here. Moved to the Layer 3 deep-dive
+    route where the rose-themed friction cards + recording buttons
+    surface UX issues more clearly. Click the URL name to drill in. */}
               <td className="px-5 py-3 text-right tabular-nums">
                 <MiniTrend current={currentForTrend} prior={priorForTrend} />
               </td>
@@ -1383,8 +1328,6 @@ export default async function Home({
               starrable={starrableTabs.has(tab)}
               showSessions={starrableTabs.has(tab) || tab === 'attribution'}
               showRevenue={tab !== 'attribution'}
-              showClarityMetrics={tab === 'watched'}
-              clarityMetrics={clarityMetrics}
             />
           </div>
           {layer2Rows.length > COLLAPSED_ROWS && (

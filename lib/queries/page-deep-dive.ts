@@ -2,8 +2,8 @@ import { execute } from '@/lib/snowflake';
 import { withCache } from '@/lib/cache';
 import {
   getSessionsByPath,
-  getDeviceSourceByPath,
-  type DeviceSourceRow,
+  getSourceByPath,
+  type SourceBreakdownRow,
 } from '@/lib/shopify';
 import { getClarityMetrics, type ClarityPageMetrics } from '@/lib/clarity-metrics';
 import { getActivePromos } from '@/lib/queries/promos';
@@ -26,7 +26,7 @@ export type PageDeepDive = {
   orderCount: { current: number; prior: number };
   revenue: { current: number; prior: number };
   // Device × source breakdown for the current window
-  deviceSource: DeviceSourceRow[];
+  sourceBreakdown: SourceBreakdownRow[];
   // Clarity friction signals for the path (last 3 days per Clarity API)
   clarity: ClarityPageMetrics | null;
   // Brand-level promos active during this window (not filtered to URL —
@@ -101,13 +101,13 @@ async function getPageDeepDiveUncached(
 ): Promise<PageDeepDive> {
   const [
     sessionsByPath,
-    deviceSource,
+    sourceBreakdown,
     clarityMap,
     activePromos,
     orders,
   ] = await Promise.all([
     getSessionsByPath(brand, period).catch(() => new Map()),
-    getDeviceSourceByPath(brand, path, period).catch(() => [] as DeviceSourceRow[]),
+    getSourceByPath(brand, path, period).catch(() => [] as SourceBreakdownRow[]),
     getClarityMetrics(brand).catch(() => new Map()),
     getActivePromos(brand).catch(() => [] as Promo[]),
     getOrdersForPath(brand, path, period).catch(() => ({
@@ -131,7 +131,7 @@ async function getPageDeepDiveUncached(
     convRate: { current: sess?.convRate ?? 0, prior: 0 },
     orderCount: { current: orders.current, prior: orders.prior },
     revenue: { current: orders.currentRev, prior: orders.priorRev },
-    deviceSource,
+    sourceBreakdown,
     clarity: clarityMap.get(path) ?? null,
     activePromos,
     intelligemsTest: findIntelligemsTest(brand, path),

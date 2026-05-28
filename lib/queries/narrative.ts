@@ -191,8 +191,7 @@ export async function getPageNarrative(args: {
   convRate: { current: number; prior: number };
   orderCount: { current: number; prior: number };
   revenue: { current: number; prior: number };
-  deviceSource: {
-    deviceType: string;
+  sourceBreakdown: {
     source: string;
     sessions: number;
     convRate: number;
@@ -223,12 +222,12 @@ export async function getPageNarrative(args: {
 
   // Build per-page prompt with all the context Claude needs to
   // identify what's actually happening on this URL specifically.
-  const topDevices = args.deviceSource
+  const topSources = args.sourceBreakdown
     .slice(0, 6)
     .map((d) => {
       const drop = d.priorConvRate > 0 && d.convRate < d.priorConvRate * 0.8;
       const surge = d.priorConvRate > 0 && d.convRate > d.priorConvRate * 1.2;
-      return `  - ${d.deviceType} · ${d.source}: ${d.sessions.toLocaleString()} sessions, ${d.convRate.toFixed(2)}% conv${
+      return `  - ${d.source || '(direct)'}: ${d.sessions.toLocaleString()} sessions, ${d.convRate.toFixed(2)}% conv${
         drop ? ' (↓ vs prior — friction signal)' : surge ? ' (↑ vs prior)' : ''
       }`;
     })
@@ -264,8 +263,8 @@ CORE METRICS (current vs prior ${args.period}-day window):
   - Orders: ${args.orderCount.current.toLocaleString()}${args.orderCount.prior > 0 ? ` (was ${args.orderCount.prior.toLocaleString()})` : ''}
   - Revenue: $${args.revenue.current.toFixed(0)}${args.revenue.prior > 0 ? ` (was $${args.revenue.prior.toFixed(0)})` : ''}
 
-WHERE CONVERSION CONCENTRATES (device × source, top 6 by sessions):
-${topDevices || '  (no breakdown data)'}
+WHERE CONVERSION CONCENTRATES (source breakdown, top 6 by sessions):
+${topSources || '  (no breakdown data)'}
 
 ${clarityLines}
 
