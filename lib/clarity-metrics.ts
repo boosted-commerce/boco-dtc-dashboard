@@ -190,9 +190,9 @@ function parseClarityResponse(raw: RawMetric[]): ClarityMetricsMap {
 }
 
 // Returns Clarity page-level metrics for a brand, keyed by normalized
-// path. Returns an empty Map when the brand has no Clarity project /
-// token configured (e.g. ASN today), or when the API call fails for
-// any reason. Tolerance keeps the dashboard rendering with "—"
+// path. Returns an empty Map when the brand has no Clarity token
+// configured, or when the API call fails for any reason. Tolerance
+// keeps the dashboard rendering with "—"
 // placeholders rather than breaking.
 export async function getClarityMetrics(brand: Brand): Promise<ClarityMetricsMap> {
   const token = getClarityToken(brand);

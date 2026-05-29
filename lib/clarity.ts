@@ -6,7 +6,7 @@ import type { Brand } from '@/lib/queries/orders';
 // Get the ID from clarity.microsoft.com — the project URL is
 // /projects/view/<this-id>/dashboard.
 export const CLARITY_PROJECT_IDS: Record<Brand, string | null> = {
-  ASN: null,
+  ASN: 'wybw2pngsg',
   HHH: 'c8sm63dtq1',
   VIV: 'u0foay6d7x',
   PRL: 'c9cysvy4ep',
