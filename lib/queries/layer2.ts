@@ -1,7 +1,7 @@
 import { execute } from '@/lib/snowflake';
 import { withCache } from '@/lib/cache';
 import type { Brand, DailyPoint, Period } from '@/lib/queries/orders';
-import { getWatchedPaths } from '@/lib/watched-store';
+import { getWatchedPaths, getHiddenPaths } from '@/lib/watched-store';
 import { getChannelSessions, getSessionsByPath } from '@/lib/shopify';
 
 // Layer 2 — page-/product-/source-level tables below Level 1. Each function
@@ -157,6 +157,13 @@ async function getPagesByType(
   period: Period,
   pathPattern: string,
 ): Promise<Layer2Row[]> {
+  // Paths the team has explicitly hidden (stale / deleted / parked pages).
+  // Excluded at the SQL level so a hidden row is replaced by the next real
+  // page rather than leaving a gap in the top-N. Reversible via Restore.
+  const hidden = await getHiddenPaths(brand);
+  const hiddenClause = hidden.length
+    ? `AND SPLIT_PART(o.LANDING_SITE, '?', 1) NOT IN (${hidden.map(() => '?').join(', ')})`
+    : '';
   const rows = await execute<RawRow>(
     `
       WITH bounds AS (
@@ -179,6 +186,7 @@ async function getPagesByType(
           AND o.CREATED_AT < b.today_start
           AND o.LANDING_SITE IS NOT NULL
           AND SPLIT_PART(o.LANDING_SITE, '?', 1) LIKE ?
+          ${hiddenClause}
           AND o.LANDING_SITE NOT LIKE '%/online_store_preview%'
           AND o.LANDING_SITE NOT LIKE '%/checkouts/sessions/clone%'
           AND o.LANDING_SITE NOT LIKE '%/cart/update.js%'
@@ -229,7 +237,7 @@ async function getPagesByType(
       LEFT JOIN sparklines s USING (landing_path)
       ORDER BY a.current_revenue DESC NULLS LAST
     `,
-    [period, period * 2, brand, pathPattern],
+    [period, period * 2, brand, pathPattern, ...hidden],
   );
   return rows.map((r) => toRow(r, 'orders'));
 }

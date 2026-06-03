@@ -94,6 +94,38 @@ export async function removeWatchedPath(brand: Brand, path: string): Promise<voi
   await redis.srem(key(brand), path);
 }
 
+// --- Hidden (excluded) pages ---
+// Per-brand Redis SET at `hidden:{brand}` of normalized paths to EXCLUDE
+// from the auto-discovered Layer 2 page tabs (PDPs / Collections / CMS).
+// Lets the team drop stale, deleted, or parked landing pages from the
+// metrics view without touching the curated Watched list. Fully
+// reversible (Restore). Starts empty — no seeding.
+const hiddenKey = (brand: Brand) => `hidden:${brand}`;
+
+export async function getHiddenPaths(brand: Brand): Promise<string[]> {
+  const redis = getRedis();
+  if (!redis) return [];
+  try {
+    const members = await redis.smembers(hiddenKey(brand));
+    return members.sort();
+  } catch (err) {
+    console.error('hidden-store read failed; treating as none hidden', err);
+    return [];
+  }
+}
+
+export async function addHiddenPath(brand: Brand, path: string): Promise<void> {
+  const redis = getRedis();
+  if (!redis) throw new Error('Hidden-pages store not configured (UPSTASH_REDIS_REST_URL missing)');
+  await redis.sadd(hiddenKey(brand), path);
+}
+
+export async function removeHiddenPath(brand: Brand, path: string): Promise<void> {
+  const redis = getRedis();
+  if (!redis) throw new Error('Hidden-pages store not configured (UPSTASH_REDIS_REST_URL missing)');
+  await redis.srem(hiddenKey(brand), path);
+}
+
 // Normalize a user-typed URL into a path the dashboard can match.
 //  - Strip protocol + host so 'https://site.com/pages/foo?utm=x' -> '/pages/foo'
 //  - Drop query string

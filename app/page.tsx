@@ -23,7 +23,7 @@ import {
   type Layer2Row,
   type Layer2Tab,
 } from '@/lib/queries/layer2';
-import { getWatchedPaths } from '@/lib/watched-store';
+import { getWatchedPaths, getHiddenPaths } from '@/lib/watched-store';
 import { getActivePromos, getPromosInWindow, type Promo } from '@/lib/queries/promos';
 import { getNorthbeamSummary, type NorthbeamSummary } from '@/lib/queries/northbeam';
 import { getNarrative } from '@/lib/queries/narrative';
@@ -32,6 +32,8 @@ import { getClarityMetrics, type ClarityMetricsMap } from '@/lib/clarity-metrics
 import { findIntelligemsTest } from '@/lib/intelligems-tests';
 import { StarButton } from '@/app/_components/star-button';
 import { AddWatchedInput } from '@/app/_components/add-watched-input';
+import { HideButton } from '@/app/_components/hide-button';
+import { HiddenManager } from '@/app/_components/hidden-manager';
 import { Sparkline, type SparklineMarker } from '@/app/_components/sparkline';
 import { fmt, type Format } from '@/lib/format';
 
@@ -674,6 +676,7 @@ function Layer2Table({
   brand,
   watchedSet,
   starrable,
+  hideable,
   showSessions,
   showRevenue,
 }: {
@@ -684,6 +687,7 @@ function Layer2Table({
   brand: Brand;
   watchedSet: Set<string>;
   starrable: boolean;
+  hideable: boolean;
   showSessions: boolean;
   showRevenue: boolean;
 }) {
@@ -821,6 +825,7 @@ function Layer2Table({
                       A/B
                     </a>
                   )}
+                  {hideable && <HideButton brand={brand} path={r.key} />}
                 </div>
                 {r.sublabel && (
                   <div className="truncate text-xs text-zinc-500 dark:text-zinc-400">
@@ -1003,6 +1008,7 @@ export default async function Home({
     data,
     layer2Rows,
     watchedPaths,
+    hiddenPaths,
     northbeam,
     clarityMetrics,
     promos,
@@ -1012,6 +1018,7 @@ export default async function Home({
     getStoreOverview(brand, period, source),
     getLayer2(brand, period, tab),
     getWatchedPaths(brand),
+    getHiddenPaths(brand),
     getNorthbeamSummary(brand, period).catch(() => null),
     // Fetched unconditionally now so the narrative can reference Clarity
     // signals even when not viewing the Watched tab. Cached 12h so the
@@ -1047,6 +1054,10 @@ export default async function Home({
   }).catch(() => null);
   const watchedSet = new Set(watchedPaths);
   const starrableTabs: ReadonlySet<Layer2Tab> = new Set(['watched', 'pdps', 'collections', 'cms']);
+  // Tabs where rows can be hidden: the auto-discovered page tabs. Not the
+  // Watched tab (un-star there instead), not the non-path-keyed tabs.
+  const hideableTabs: ReadonlySet<Layer2Tab> = new Set(['pdps', 'collections', 'cms']);
+  const hideable = hideableTabs.has(tab);
   const metricNounByTab: Record<Layer2Tab, 'orders' | 'units' | 'orders attributed'> = {
     watched: 'orders',
     pdps: 'orders',
@@ -1293,10 +1304,12 @@ export default async function Home({
               brand={brand}
               watchedSet={watchedSet}
               starrable={starrableTabs.has(tab)}
+              hideable={hideable}
               showSessions={starrableTabs.has(tab) || tab === 'attribution'}
               showRevenue={tab !== 'attribution'}
             />
           </div>
+          {hideable && <HiddenManager brand={brand} paths={hiddenPaths} />}
           {layer2Rows.length > COLLAPSED_ROWS && (
             <div className="flex justify-center border-t border-zinc-100 bg-zinc-50/50 px-5 py-3 dark:border-zinc-800 dark:bg-zinc-900/30">
               <Link
