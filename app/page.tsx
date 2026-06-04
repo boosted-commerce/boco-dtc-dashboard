@@ -1292,6 +1292,7 @@ export default async function Home({
               <AddWatchedInput brand={brand} />
             </div>
           )}
+          {hideable && <HiddenManager brand={brand} paths={hiddenPaths} />}
           {/* overflow-x-auto wrapper lets the wide table (esp. Watched
               tab with up to 14 columns) scroll horizontally inside the
               section while the tabs + footnote stay put */}
@@ -1309,7 +1310,6 @@ export default async function Home({
               showRevenue={tab !== 'attribution'}
             />
           </div>
-          {hideable && <HiddenManager brand={brand} paths={hiddenPaths} />}
           {layer2Rows.length > COLLAPSED_ROWS && (
             <div className="flex justify-center border-t border-zinc-100 bg-zinc-50/50 px-5 py-3 dark:border-zinc-800 dark:bg-zinc-900/30">
               <Link
