@@ -85,6 +85,10 @@ export async function addWatchedPath(brand: Brand, path: string): Promise<void> 
   }
 
   await redis.sadd(key(brand), path);
+  // Watching a page overrides any hide — clear it so the page reliably
+  // shows. "Watch" wins over "hidden", and re-adding via the watch input
+  // doubles as a bring-back path for a hidden page.
+  await redis.hdel(hiddenKey(brand), path).catch(() => {});
 }
 
 export async function removeWatchedPath(brand: Brand, path: string): Promise<void> {
@@ -95,35 +99,57 @@ export async function removeWatchedPath(brand: Brand, path: string): Promise<voi
 }
 
 // --- Hidden (excluded) pages ---
-// Per-brand Redis SET at `hidden:{brand}` of normalized paths to EXCLUDE
-// from the auto-discovered Layer 2 page tabs (PDPs / Collections / CMS).
-// Lets the team drop stale, deleted, or parked landing pages from the
-// metrics view without touching the curated Watched list. Fully
-// reversible (Restore). Starts empty — no seeding.
-const hiddenKey = (brand: Brand) => `hidden:${brand}`;
+// Normalized paths to EXCLUDE from the auto-discovered Layer 2 page tabs
+// (PDPs / Collections / CMS). Lets the team drop stale, deleted, or
+// parked landing pages without touching the curated Watched list.
+//
+// Stored as a Redis HASH `hiddenpages:{brand}` mapping path -> expiry
+// timestamp (ms). Hides auto-expire after HIDDEN_TTL so the list
+// self-cleans; expired fields are pruned lazily on read (no cron). A new
+// key name (vs the old SET) avoids a WRONGTYPE collision on migration.
+export const HIDDEN_TTL_MS = 15 * 24 * 60 * 60 * 1000; // 15 days
+const hiddenKey = (brand: Brand) => `hiddenpages:${brand}`;
 
-export async function getHiddenPaths(brand: Brand): Promise<string[]> {
+export type HiddenEntry = { path: string; expiresAt: number };
+
+export async function getHiddenEntries(brand: Brand): Promise<HiddenEntry[]> {
   const redis = getRedis();
   if (!redis) return [];
   try {
-    const members = await redis.smembers(hiddenKey(brand));
-    return members.sort();
+    const raw = await redis.hgetall<Record<string, number | string>>(hiddenKey(brand));
+    if (!raw) return [];
+    const now = Date.now();
+    const live: HiddenEntry[] = [];
+    const expired: string[] = [];
+    for (const [path, exp] of Object.entries(raw)) {
+      const expiresAt = typeof exp === 'number' ? exp : Number(exp);
+      if (!Number.isFinite(expiresAt) || expiresAt <= now) expired.push(path);
+      else live.push({ path, expiresAt });
+    }
+    // Lazy cleanup of expired hides — fire-and-forget so a read never
+    // blocks on the prune.
+    if (expired.length) redis.hdel(hiddenKey(brand), ...expired).catch(() => {});
+    return live.sort((a, b) => a.path.localeCompare(b.path));
   } catch (err) {
     console.error('hidden-store read failed; treating as none hidden', err);
     return [];
   }
 }
 
+export async function getHiddenPaths(brand: Brand): Promise<string[]> {
+  return (await getHiddenEntries(brand)).map((e) => e.path);
+}
+
 export async function addHiddenPath(brand: Brand, path: string): Promise<void> {
   const redis = getRedis();
   if (!redis) throw new Error('Hidden-pages store not configured (UPSTASH_REDIS_REST_URL missing)');
-  await redis.sadd(hiddenKey(brand), path);
+  await redis.hset(hiddenKey(brand), { [path]: Date.now() + HIDDEN_TTL_MS });
 }
 
 export async function removeHiddenPath(brand: Brand, path: string): Promise<void> {
   const redis = getRedis();
   if (!redis) throw new Error('Hidden-pages store not configured (UPSTASH_REDIS_REST_URL missing)');
-  await redis.srem(hiddenKey(brand), path);
+  await redis.hdel(hiddenKey(brand), path);
 }
 
 // Normalize a user-typed URL into a path the dashboard can match.

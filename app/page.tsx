@@ -23,7 +23,7 @@ import {
   type Layer2Row,
   type Layer2Tab,
 } from '@/lib/queries/layer2';
-import { getWatchedPaths, getHiddenPaths } from '@/lib/watched-store';
+import { getWatchedPaths, getHiddenEntries } from '@/lib/watched-store';
 import { getActivePromos, getPromosInWindow, type Promo } from '@/lib/queries/promos';
 import { getNorthbeamSummary, type NorthbeamSummary } from '@/lib/queries/northbeam';
 import { getNarrative } from '@/lib/queries/narrative';
@@ -1008,7 +1008,7 @@ export default async function Home({
     data,
     layer2Rows,
     watchedPaths,
-    hiddenPaths,
+    hiddenEntries,
     northbeam,
     clarityMetrics,
     promos,
@@ -1018,7 +1018,7 @@ export default async function Home({
     getStoreOverview(brand, period, source),
     getLayer2(brand, period, tab),
     getWatchedPaths(brand),
-    getHiddenPaths(brand),
+    getHiddenEntries(brand),
     getNorthbeamSummary(brand, period).catch(() => null),
     // Fetched unconditionally now so the narrative can reference Clarity
     // signals even when not viewing the Watched tab. Cached 12h so the
@@ -1292,7 +1292,7 @@ export default async function Home({
               <AddWatchedInput brand={brand} />
             </div>
           )}
-          {hideable && <HiddenManager brand={brand} paths={hiddenPaths} />}
+          {hideable && <HiddenManager brand={brand} entries={hiddenEntries} />}
           {/* overflow-x-auto wrapper lets the wide table (esp. Watched
               tab with up to 14 columns) scroll horizontally inside the
               section while the tabs + footnote stay put */}
