@@ -182,6 +182,40 @@ Write 3-5 sentences (max 110 words total) covering:
 Style: factual, concrete, no hype, no hedging, no bullet points, no markdown. Use specific numbers and named entities (channel/product/page names) from the data. Don't recommend actions unless the data strongly supports one. Write as plain prose.`;
 }
 
+// Page-narrative cache key. Includes a note signature (count + newest
+// timestamp) so adding/removing a team note yields a fresh analysis.
+function pageNarrativeKey(
+  brand: Brand,
+  period: Period,
+  path: string,
+  comments: PageComment[],
+): string {
+  const noteSig = comments.length
+    ? `c${comments.length}-${Math.max(...comments.map((c) => c.createdAt))}`
+    : 'c0';
+  return `narrative:page:${brand}:${period}:${encodeURIComponent(path)}:${noteSig}:v2`;
+}
+
+// Read-only peek: returns a cached page narrative or null, NEVER calls
+// the API. Used for non-watched pages so we don't auto-spend tokens —
+// they show a cached summary if one exists, otherwise a Generate button.
+export async function peekPageNarrative(args: {
+  brand: Brand;
+  period: Period;
+  path: string;
+  comments?: PageComment[];
+}): Promise<string | null> {
+  const redis = getRedis();
+  if (!redis) return null;
+  try {
+    return (await redis.get<string>(
+      pageNarrativeKey(args.brand, args.period, args.path, args.comments ?? []),
+    )) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 // Per-page narrative — same model, page-scoped prompt. Different
 // cache key so brand-level and page-level narratives don't collide.
 export async function getPageNarrative(args: {
@@ -210,21 +244,18 @@ export async function getPageNarrative(args: {
   // Team notes left on this page — fed in as authoritative context so
   // the analysis revises in light of them (e.g. a known redirect bug).
   comments?: PageComment[];
+  // Force a fresh generation, overwriting any cached summary. Used by the
+  // "refresh analysis" action.
+  force?: boolean;
 }): Promise<string | null> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return null;
 
   const comments = args.comments ?? [];
   const redis = getRedis();
-  // Note signature in the cache key: count + newest timestamp. Adding or
-  // removing a note changes it, so a fresh note re-triggers the analysis
-  // instead of returning the pre-note cached summary.
-  const noteSig = comments.length
-    ? `c${comments.length}-${Math.max(...comments.map((c) => c.createdAt))}`
-    : 'c0';
-  const key = `narrative:page:${args.brand}:${args.period}:${encodeURIComponent(args.path)}:${noteSig}:v2`;
+  const key = pageNarrativeKey(args.brand, args.period, args.path, comments);
 
-  if (redis) {
+  if (redis && !args.force) {
     try {
       const cached = await redis.get<string>(key);
       if (cached) return cached;
