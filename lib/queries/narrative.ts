@@ -182,35 +182,40 @@ Write 3-5 sentences (max 110 words total) covering:
 Style: factual, concrete, no hype, no hedging, no bullet points, no markdown. Use specific numbers and named entities (channel/product/page names) from the data. Don't recommend actions unless the data strongly supports one. Write as plain prose.`;
 }
 
-// Page-narrative cache key. Includes a note signature (count + newest
-// timestamp) so adding/removing a team note yields a fresh analysis.
-function pageNarrativeKey(
-  brand: Brand,
-  period: Period,
-  path: string,
-  comments: PageComment[],
-): string {
-  const noteSig = comments.length
-    ? `c${comments.length}-${Math.max(...comments.map((c) => c.createdAt))}`
-    : 'c0';
-  return `narrative:page:${brand}:${period}:${encodeURIComponent(path)}:${noteSig}:v2`;
+// Stable page-narrative cache key (brand/period/path only). The note
+// signature is stored INSIDE the cached value, not in the key — so adding
+// a note doesn't change the key (which would make a non-watched page's
+// summary "disappear"); instead the cache reads as stale and regenerates.
+function pageNarrativeKey(brand: Brand, period: Period, path: string): string {
+  return `narrative:page:${brand}:${period}:${encodeURIComponent(path)}:v3`;
 }
 
-// Read-only peek: returns a cached page narrative or null, NEVER calls
-// the API. Used for non-watched pages so we don't auto-spend tokens —
-// they show a cached summary if one exists, otherwise a Generate button.
+// Note signature: count + newest timestamp. A change means the notes
+// changed since the cached summary was written → regenerate.
+function noteSignature(comments: PageComment[]): string {
+  return comments.length
+    ? `c${comments.length}-${Math.max(...comments.map((c) => c.createdAt))}`
+    : 'c0';
+}
+
+type PageNarrativeCache = { text: string; noteSig: string };
+
+// Read-only peek: returns a cached page narrative's text (regardless of
+// note staleness) or null. NEVER calls the API. Used to decide whether a
+// summary already exists for a non-watched page — if it does, the page
+// regenerates on note changes; if not, it shows a Generate button.
 export async function peekPageNarrative(args: {
   brand: Brand;
   period: Period;
   path: string;
-  comments?: PageComment[];
 }): Promise<string | null> {
   const redis = getRedis();
   if (!redis) return null;
   try {
-    return (await redis.get<string>(
-      pageNarrativeKey(args.brand, args.period, args.path, args.comments ?? []),
-    )) ?? null;
+    const cached = await redis.get<PageNarrativeCache>(
+      pageNarrativeKey(args.brand, args.period, args.path),
+    );
+    return cached?.text ?? null;
   } catch {
     return null;
   }
@@ -253,12 +258,15 @@ export async function getPageNarrative(args: {
 
   const comments = args.comments ?? [];
   const redis = getRedis();
-  const key = pageNarrativeKey(args.brand, args.period, args.path, comments);
+  const key = pageNarrativeKey(args.brand, args.period, args.path);
+  const noteSig = noteSignature(comments);
 
+  // Use the cache only when it isn't forced AND the notes haven't changed
+  // since it was written. A note edit makes it stale → regenerate.
   if (redis && !args.force) {
     try {
-      const cached = await redis.get<string>(key);
-      if (cached) return cached;
+      const cached = await redis.get<PageNarrativeCache>(key);
+      if (cached && cached.noteSig === noteSig) return cached.text;
     } catch { /* fall through */ }
   }
 
@@ -355,7 +363,11 @@ Style: factual, concrete, no hype, no hedging, no bullet points or markdown. Use
     const json = (await res.json()) as { content?: Array<{ type: string; text?: string }> };
     const text = json.content?.find((c) => c.type === 'text')?.text?.trim() ?? null;
     if (text && redis) {
-      try { await redis.set(key, text, { ex: CACHE_TTL_SECONDS }); } catch {}
+      try {
+        await redis.set(key, { text, noteSig } satisfies PageNarrativeCache, {
+          ex: CACHE_TTL_SECONDS,
+        });
+      } catch {}
     }
     return text;
   } catch (err) {

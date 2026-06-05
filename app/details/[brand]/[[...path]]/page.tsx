@@ -178,27 +178,31 @@ export default async function PageDeepDivePage({
   ]);
   const isWatched = watchedPaths.includes(path);
 
-  // Token-saving: only Watched pages auto-generate their summary on load.
-  // Any other page shows a cached summary if one already exists (free),
-  // otherwise a "Generate" button so we don't spend tokens on pages
-  // nobody asked about. Returns null on missing API key / errors → falls
-  // back to a friendly placeholder.
-  const narrative = isWatched
-    ? await getPageNarrative({
-        brand,
-        period,
-        path,
-        sessions: data.sessions,
-        convRate: data.convRate,
-        orderCount: data.orderCount,
-        revenue: data.revenue,
-        sourceBreakdown: data.sourceBreakdown,
-        clarity: data.clarity,
-        activePromos: data.activePromos,
-        intelligemsRole: data.intelligemsTest?.role ?? null,
-        comments,
-      }).catch(() => null)
-    : await peekPageNarrative({ brand, period, path, comments }).catch(() => null);
+  // Token-saving: Watched pages auto-generate their summary on load. Any
+  // other page only generates once the user clicks "Generate" — but once
+  // a summary EXISTS, it behaves like a watched page: adding a note
+  // regenerates it (incorporating the note) rather than reverting to the
+  // button. We peek (no API call) to learn whether a summary exists; if
+  // it does (or the page is watched), getPageNarrative returns the cached
+  // text when fresh, or regenerates when the notes have changed.
+  const existingSummary = await peekPageNarrative({ brand, period, path }).catch(() => null);
+  const narrative =
+    isWatched || existingSummary !== null
+      ? await getPageNarrative({
+          brand,
+          period,
+          path,
+          sessions: data.sessions,
+          convRate: data.convRate,
+          orderCount: data.orderCount,
+          revenue: data.revenue,
+          sourceBreakdown: data.sourceBreakdown,
+          clarity: data.clarity,
+          activePromos: data.activePromos,
+          intelligemsRole: data.intelligemsTest?.role ?? null,
+          comments,
+        }).catch(() => null)
+      : null;
 
   return (
     <main className="min-h-screen bg-zinc-50 px-6 py-8 dark:bg-black">
