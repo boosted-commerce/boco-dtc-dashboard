@@ -301,7 +301,7 @@ export async function getPageNarrative(args: {
     .map((c) => `  - ${c.author}: ${c.text}`)
     .join('\n');
   const teamNotesBlock = noteLines
-    ? `\nTEAM NOTES (observations operators left on this page — treat as authoritative context: a known redirect/tracking bug, a planned change, or something seen in a session recording. Factor them into your read and reference them where they explain or qualify the data):\n${noteLines}\n`
+    ? `\nTEAM NOTES & QUESTIONS (operators left these — context, hypotheses, or questions). Treat them as leads to investigate, NOT as established fact. For each: weigh it against the data above and either corroborate it, refine it, or push back with specific reasons if the numbers don't support it. If a note poses a question, answer it directly from the data. Reach your own conclusion:\n${noteLines}\n`
     : '';
 
   const prompt = `You are writing a focused narrative for a single landing page on the Boosted Commerce DTC dashboard. The audience is the operator who clicked into this page to understand what's happening on it.
@@ -324,12 +324,12 @@ ACTIVE PROMOS (brand-level — may or may not affect this page):
 ${promoLines || 'No active promos.'}
 ${teamNotesBlock}
 INSTRUCTIONS:
-Write 3-5 sentences (max 110 words total) that:
+Write 3-6 sentences (max 140 words total) that:
 1. Lead with the single most notable thing about THIS page in this window (the metric shift, the friction signal, or the segment imbalance)
 2. Attribute it to a specific cause grounded in the data: a device/source segment ("conversion has fallen to 0.4% on mobile from Meta"), a Clarity signal ("12 rage-click sessions concentrated on this URL"), an active promo (if relevant), or the Intelligems test if this page is in one
 3. Call out one thing worth attention — a specific friction point, a segment opportunity, or a divergence
 
-If a team note explains or qualifies a metric (e.g. a redirect bug, a tracking gap, a planned change), incorporate it explicitly and let it revise your read — the operators who left it have context the raw numbers don't. Don't contradict a team note without reason.
+Engage with any team notes critically rather than restating them: validate each against the data — confirm it, refine it, or respectfully disagree with specific reasons. Answer any question a note poses directly from the data. Where the data supports it, finish with your own concrete conclusion or suggestion rather than echoing the note.
 
 Style: factual, concrete, no hype, no hedging, no bullet points or markdown. Use specific numbers and named segments from the data. Don't recommend actions unless the data strongly supports one. If a metric is "new" (no prior data), say so explicitly rather than implying it shifted.`;
 

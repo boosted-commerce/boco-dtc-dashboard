@@ -99,6 +99,10 @@ export function PageComments({
           {comments.length} {comments.length === 1 ? 'note' : 'notes'}
         </div>
       </div>
+      <p className="-mt-2 mb-3 text-[11px] text-zinc-400 dark:text-zinc-500">
+        Context &amp; questions for the AI analysis — Claude weighs these against the data and answers
+        questions in the summary above. Adding a note re-runs the analysis.
+      </p>
 
       {comments.length > 0 ? (
         <ul className="mb-4 space-y-3">
@@ -126,7 +130,10 @@ export function PageComments({
         </ul>
       ) : (
         <p className="mb-4 text-sm text-zinc-400 dark:text-zinc-500">
-          No notes yet — add context here (e.g. a redirect or test you spotted in Clarity) so the next person sees the why behind the numbers.
+          No notes yet. Add context, a hypothesis, or a question (e.g. &ldquo;is the conv drop just the
+          broken pixel on Apr 2&ndash;4?&rdquo;). Claude weighs each note against the data — confirming,
+          refining, or pushing back — and folds its take (and answers to your questions) into the
+          summary above. It won&rsquo;t just repeat what you wrote.
         </p>
       )}
 
@@ -145,7 +152,7 @@ export function PageComments({
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Add a note about this page…"
+          placeholder="Add context, a hypothesis, or a question for the analysis…"
           rows={2}
           disabled={pending}
           className="w-full rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100 dark:placeholder:text-zinc-600"
