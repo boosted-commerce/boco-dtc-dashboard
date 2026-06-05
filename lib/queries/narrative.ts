@@ -4,6 +4,7 @@ import type { Promo } from '@/lib/queries/promos';
 import type { NorthbeamSummary } from '@/lib/queries/northbeam';
 import type { ClarityMetricsMap } from '@/lib/clarity-metrics';
 import type { Layer2Row } from '@/lib/queries/layer2';
+import type { PageComment } from '@/lib/comments-store';
 
 // Server-side narrative generation via Anthropic. Reads ANTHROPIC_API_KEY
 // from Vercel env. Returns null on any error so the dashboard falls
@@ -206,12 +207,22 @@ export async function getPageNarrative(args: {
   } | null;
   activePromos: Promo[];
   intelligemsRole: 'origin' | 'destination' | null;
+  // Team notes left on this page — fed in as authoritative context so
+  // the analysis revises in light of them (e.g. a known redirect bug).
+  comments?: PageComment[];
 }): Promise<string | null> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return null;
 
+  const comments = args.comments ?? [];
   const redis = getRedis();
-  const key = `narrative:page:${args.brand}:${args.period}:${encodeURIComponent(args.path)}:v1`;
+  // Note signature in the cache key: count + newest timestamp. Adding or
+  // removing a note changes it, so a fresh note re-triggers the analysis
+  // instead of returning the pre-note cached summary.
+  const noteSig = comments.length
+    ? `c${comments.length}-${Math.max(...comments.map((c) => c.createdAt))}`
+    : 'c0';
+  const key = `narrative:page:${args.brand}:${args.period}:${encodeURIComponent(args.path)}:${noteSig}:v2`;
 
   if (redis) {
     try {
@@ -252,6 +263,16 @@ export async function getPageNarrative(args: {
     ? `This URL is currently the ${args.intelligemsRole} of an active Intelligems A/B test.`
     : '';
 
+  // Team notes — most recent 10, oldest→newest. Fed in as authoritative
+  // operator context so the analysis can be revised in light of them.
+  const noteLines = comments
+    .slice(-10)
+    .map((c) => `  - ${c.author}: ${c.text}`)
+    .join('\n');
+  const teamNotesBlock = noteLines
+    ? `\nTEAM NOTES (observations operators left on this page — treat as authoritative context: a known redirect/tracking bug, a planned change, or something seen in a session recording. Factor them into your read and reference them where they explain or qualify the data):\n${noteLines}\n`
+    : '';
+
   const prompt = `You are writing a focused narrative for a single landing page on the Boosted Commerce DTC dashboard. The audience is the operator who clicked into this page to understand what's happening on it.
 
 PAGE: ${args.path} · BRAND: ${args.brand} · WINDOW: last ${args.period} days
@@ -270,12 +291,14 @@ ${clarityLines}
 
 ACTIVE PROMOS (brand-level — may or may not affect this page):
 ${promoLines || 'No active promos.'}
-
+${teamNotesBlock}
 INSTRUCTIONS:
 Write 3-5 sentences (max 110 words total) that:
 1. Lead with the single most notable thing about THIS page in this window (the metric shift, the friction signal, or the segment imbalance)
 2. Attribute it to a specific cause grounded in the data: a device/source segment ("conversion has fallen to 0.4% on mobile from Meta"), a Clarity signal ("12 rage-click sessions concentrated on this URL"), an active promo (if relevant), or the Intelligems test if this page is in one
 3. Call out one thing worth attention — a specific friction point, a segment opportunity, or a divergence
+
+If a team note explains or qualifies a metric (e.g. a redirect bug, a tracking gap, a planned change), incorporate it explicitly and let it revise your read — the operators who left it have context the raw numbers don't. Don't contradict a team note without reason.
 
 Style: factual, concrete, no hype, no hedging, no bullet points or markdown. Use specific numbers and named segments from the data. Don't recommend actions unless the data strongly supports one. If a metric is "new" (no prior data), say so explicitly rather than implying it shifted.`;
 
