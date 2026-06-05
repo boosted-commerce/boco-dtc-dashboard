@@ -1,7 +1,11 @@
 import Link from 'next/link';
 import { parseBrand, parsePeriod, PERIODS, type Brand, type Period } from '@/lib/queries/orders';
 import { getPageDeepDive } from '@/lib/queries/page-deep-dive';
-import { getPageNarrative, peekPageNarrative } from '@/lib/queries/narrative';
+import {
+  getPageNarrative,
+  peekPageNarrative,
+  getPageNarrativeHistory,
+} from '@/lib/queries/narrative';
 import { clarityHeatmapUrl, clarityRecordingsUrl } from '@/lib/clarity';
 import { getComments } from '@/lib/comments-store';
 import { getWatchedPaths } from '@/lib/watched-store';
@@ -148,12 +152,21 @@ function ScrollBar({ pct }: { pct: number | null }) {
   );
 }
 
+// Format a stored snapshot date (YYYY-MM-DD) as e.g. "Jun 1". Parsed at
+// noon UTC to avoid a timezone off-by-one.
+function fmtSnapshotDate(d: string): string {
+  return new Date(`${d}T12:00:00Z`).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
 export default async function PageDeepDivePage({
   params,
   searchParams,
 }: {
   params: Promise<{ brand: string; path?: string[] }>;
-  searchParams: Promise<{ period?: string }>;
+  searchParams: Promise<{ period?: string; asOf?: string }>;
 }) {
   const { brand: brandRaw, path: pathSegments } = await params;
   const sp = await searchParams;
@@ -172,11 +185,18 @@ export default async function PageDeepDivePage({
 
   // Team notes are fetched first so they can feed the AI analysis as
   // authoritative context — a note (e.g. a redirect bug) revises the read.
-  const [comments, watchedPaths] = await Promise.all([
+  const [comments, watchedPaths, history] = await Promise.all([
     getComments(brand, path).catch(() => []),
     getWatchedPaths(brand).catch(() => [] as string[]),
+    getPageNarrativeHistory(brand, period, path).catch(() => []),
   ]);
   const isWatched = watchedPaths.includes(path);
+
+  // Historical view: ?asOf=YYYY-MM-DD shows that day's stored snapshot
+  // (read-only, no regeneration, no token spend).
+  const asOf = typeof sp.asOf === 'string' ? sp.asOf : null;
+  const historical = asOf ? history.find((h) => h.date === asOf) ?? null : null;
+  const viewingHistory = historical !== null;
 
   // Token-saving: Watched pages auto-generate their summary on load. Any
   // other page only generates once the user clicks "Generate" — but once
@@ -185,9 +205,12 @@ export default async function PageDeepDivePage({
   // button. We peek (no API call) to learn whether a summary exists; if
   // it does (or the page is watched), getPageNarrative returns the cached
   // text when fresh, or regenerates when the notes have changed.
-  const existingSummary = await peekPageNarrative({ brand, period, path }).catch(() => null);
-  const narrative =
-    isWatched || existingSummary !== null
+  const existingSummary = viewingHistory
+    ? null
+    : await peekPageNarrative({ brand, period, path }).catch(() => null);
+  const narrative = viewingHistory
+    ? historical.text
+    : isWatched || existingSummary !== null
       ? await getPageNarrative({
           brand,
           period,
@@ -261,7 +284,9 @@ export default async function PageDeepDivePage({
               What&rsquo;s happening on this page
             </div>
             <div className="flex items-center gap-3 text-xs text-zinc-400 dark:text-zinc-500">
-              {narrative ? (
+              {viewingHistory ? (
+                <span>Snapshot from {fmtSnapshotDate(historical.date)} · read-only</span>
+              ) : narrative ? (
                 <>
                   <span>
                     {comments.length > 0
@@ -282,6 +307,39 @@ export default async function PageDeepDivePage({
               )}
             </div>
           </div>
+
+          {/* History timeline — past daily snapshots (up to 10 days). */}
+          {history.length > 0 && (
+            <div className="mb-3 flex flex-wrap items-center gap-1.5">
+              <span className="mr-1 text-[10px] uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                History
+              </span>
+              <Link
+                href={`/details/${brand}${path === '/' ? '' : path}?period=${period}`}
+                className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                  !viewingHistory
+                    ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
+                    : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
+                }`}
+              >
+                Latest
+              </Link>
+              {history.map((h) => (
+                <Link
+                  key={h.date}
+                  href={`/details/${brand}${path === '/' ? '' : path}?period=${period}&asOf=${h.date}`}
+                  className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                    asOf === h.date
+                      ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
+                      : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  {fmtSnapshotDate(h.date)}
+                </Link>
+              ))}
+            </div>
+          )}
+
           {narrative ? (
             <p className="whitespace-pre-line text-zinc-700 dark:text-zinc-200">{narrative}</p>
           ) : isWatched ? (

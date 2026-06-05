@@ -200,6 +200,61 @@ function noteSignature(comments: PageComment[]): string {
 
 type PageNarrativeCache = { text: string; noteSig: string };
 
+// --- Historical snapshots ---
+// Each successful generation is also recorded under today's date so the
+// page can show how its analysis read on previous days. Kept to the most
+// recent HISTORY_DAYS dates per (brand, period, path).
+const HISTORY_DAYS = 10;
+const histKey = (brand: Brand, period: Period, path: string) =>
+  `narrative:hist:${brand}:${period}:${encodeURIComponent(path)}`;
+
+export type NarrativeSnapshot = { date: string; text: string };
+
+async function recordPageNarrativeSnapshot(
+  brand: Brand,
+  period: Period,
+  path: string,
+  text: string,
+): Promise<void> {
+  const redis = getRedis();
+  if (!redis) return;
+  const date = new Date().toISOString().slice(0, 10); // UTC YYYY-MM-DD
+  const key = histKey(brand, period, path);
+  try {
+    await redis.hset(key, { [date]: text });
+    // Prune to the newest HISTORY_DAYS dates.
+    const all = await redis.hgetall<Record<string, string>>(key);
+    if (all) {
+      const dates = Object.keys(all).sort(); // ascending
+      if (dates.length > HISTORY_DAYS) {
+        const remove = dates.slice(0, dates.length - HISTORY_DAYS);
+        if (remove.length) await redis.hdel(key, ...remove);
+      }
+    }
+  } catch {
+    /* history is best-effort — never block the summary on it */
+  }
+}
+
+// Past daily snapshots for a page+period, newest first (up to HISTORY_DAYS).
+export async function getPageNarrativeHistory(
+  brand: Brand,
+  period: Period,
+  path: string,
+): Promise<NarrativeSnapshot[]> {
+  const redis = getRedis();
+  if (!redis) return [];
+  try {
+    const all = await redis.hgetall<Record<string, string>>(histKey(brand, period, path));
+    if (!all) return [];
+    return Object.entries(all)
+      .map(([date, text]) => ({ date, text }))
+      .sort((a, b) => b.date.localeCompare(a.date));
+  } catch {
+    return [];
+  }
+}
+
 // Read-only peek: returns a cached page narrative's text (regardless of
 // note staleness) or null. NEVER calls the API. Used to decide whether a
 // summary already exists for a non-watched page — if it does, the page
@@ -368,6 +423,8 @@ Style: factual, concrete, no hype, no hedging, no bullet points or markdown. Use
           ex: CACHE_TTL_SECONDS,
         });
       } catch {}
+      // Record today's snapshot for the historical timeline (best-effort).
+      await recordPageNarrativeSnapshot(args.brand, args.period, args.path, text);
     }
     return text;
   } catch (err) {
