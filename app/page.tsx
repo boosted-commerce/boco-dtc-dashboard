@@ -368,12 +368,22 @@ function ChannelDonut({
 function ChannelMix({
   data,
   period,
+  source,
 }: {
   data: ChannelMixData;
   period: Period;
+  source: SourceFilter;
 }) {
   if (data.channels.length === 0 || data.totalCurrent === 0) return null;
-  const dtcShare = data.channels.find((c) => c.channel === 'DTC')?.sharePct ?? 0;
+  const dtcRow = data.channels.find((c) => c.channel === 'DTC');
+  const dtcShare = dtcRow?.sharePct ?? 0;
+  // The donut always shows the full channel split, but the headline total
+  // follows the All-channels / DTC-only toggle so it matches what the rest
+  // of Layer 1 is scoped to.
+  const dtcOnly = source === 'dtc';
+  const headlineLabel = dtcOnly ? `DTC total (${period}d)` : `Total all channels (${period}d)`;
+  const headlineCurrent = dtcOnly ? dtcRow?.currentRevenue ?? 0 : data.totalCurrent;
+  const headlinePrior = dtcOnly ? dtcRow?.priorRevenue ?? 0 : data.totalPrior;
 
   return (
     <section className="mb-6 rounded-lg border border-zinc-200 bg-white px-5 py-4 dark:border-zinc-800 dark:bg-zinc-950">
@@ -392,14 +402,14 @@ function ChannelMix({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <span className="text-[10px] uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-              Total all channels ({period}d)
+              {headlineLabel}
             </span>
             <span className="text-lg font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">
-              ${data.totalCurrent.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              ${headlineCurrent.toLocaleString(undefined, { maximumFractionDigits: 0 })}
             </span>
             <ChangeChip
-              current={data.totalCurrent}
-              prior={data.totalPrior}
+              current={headlineCurrent}
+              prior={headlinePrior}
               label="vs prior"
             />
           </div>
@@ -1147,7 +1157,7 @@ export default async function Home({
         <h2 className="mt-10 mb-3 text-xl font-semibold uppercase tracking-wider text-zinc-700 dark:text-zinc-300">
           Layer 1 · Store Overview
         </h2>
-        <ChannelMix data={data.channelMix} period={data.period} />
+        <ChannelMix data={data.channelMix} period={data.period} source={source} />
 
         {northbeam && <NorthbeamPanel data={northbeam} period={period} />}
 
