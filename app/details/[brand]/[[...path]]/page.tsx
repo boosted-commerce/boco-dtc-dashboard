@@ -3,6 +3,8 @@ import { parseBrand, parsePeriod, PERIODS, type Brand, type Period } from '@/lib
 import { getPageDeepDive } from '@/lib/queries/page-deep-dive';
 import { getPageNarrative } from '@/lib/queries/narrative';
 import { clarityHeatmapUrl, clarityRecordingsUrl } from '@/lib/clarity';
+import { getComments } from '@/lib/comments-store';
+import { PageComments } from '@/app/_components/page-comments';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -183,6 +185,8 @@ export default async function PageDeepDivePage({
     intelligemsRole: data.intelligemsTest?.role ?? null,
   }).catch(() => null);
 
+  const comments = await getComments(brand, path).catch(() => []);
+
   return (
     <main className="min-h-screen bg-zinc-50 px-6 py-8 dark:bg-black">
       <div className="mx-auto max-w-6xl">
@@ -253,6 +257,9 @@ export default async function PageDeepDivePage({
             </p>
           )}
         </section>
+
+        {/* Team notes — persistent per-page commentary */}
+        <PageComments brand={brand} path={path} comments={comments} />
 
         {/* Active promos context strip */}
         {data.activePromos.filter((p) => p.state === 'active').length > 0 && (
