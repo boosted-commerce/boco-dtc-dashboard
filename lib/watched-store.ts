@@ -144,12 +144,46 @@ export async function addHiddenPath(brand: Brand, path: string): Promise<void> {
   const redis = getRedis();
   if (!redis) throw new Error('Hidden-pages store not configured (UPSTASH_REDIS_REST_URL missing)');
   await redis.hset(hiddenKey(brand), { [path]: Date.now() + HIDDEN_TTL_MS });
+  // Hidden and pinned are opposites — clear any pin so they can't conflict.
+  await redis.srem(pinnedKey(brand), path).catch(() => {});
 }
 
 export async function removeHiddenPath(brand: Brand, path: string): Promise<void> {
   const redis = getRedis();
   if (!redis) throw new Error('Hidden-pages store not configured (UPSTASH_REDIS_REST_URL missing)');
   await redis.hdel(hiddenKey(brand), path);
+}
+
+// --- Pinned (force-included) pages ---
+// Paths to ALWAYS show in the auto-discovered Layer 2 page tabs, even if
+// not top-by-revenue or with zero orders — WITHOUT adding them to the
+// curated Watched list. The inverse of hidden. Per-brand SET
+// `pinned:{brand}`.
+const pinnedKey = (brand: Brand) => `pinned:${brand}`;
+
+export async function getPinnedPaths(brand: Brand): Promise<string[]> {
+  const redis = getRedis();
+  if (!redis) return [];
+  try {
+    return (await redis.smembers(pinnedKey(brand))).sort();
+  } catch (err) {
+    console.error('pinned-store read failed; treating as none pinned', err);
+    return [];
+  }
+}
+
+export async function addPinnedPath(brand: Brand, path: string): Promise<void> {
+  const redis = getRedis();
+  if (!redis) throw new Error('Pinned-pages store not configured (UPSTASH_REDIS_REST_URL missing)');
+  await redis.sadd(pinnedKey(brand), path);
+  // Pinning overrides a hide — clear any hidden entry for this path.
+  await redis.hdel(hiddenKey(brand), path).catch(() => {});
+}
+
+export async function removePinnedPath(brand: Brand, path: string): Promise<void> {
+  const redis = getRedis();
+  if (!redis) throw new Error('Pinned-pages store not configured (UPSTASH_REDIS_REST_URL missing)');
+  await redis.srem(pinnedKey(brand), path);
 }
 
 // Normalize a user-typed URL into a path the dashboard can match.

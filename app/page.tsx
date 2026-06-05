@@ -34,6 +34,7 @@ import { StarButton } from '@/app/_components/star-button';
 import { AddWatchedInput } from '@/app/_components/add-watched-input';
 import { HideButton } from '@/app/_components/hide-button';
 import { HiddenManager } from '@/app/_components/hidden-manager';
+import { AddPinnedInput, UnpinButton } from '@/app/_components/pin-controls';
 import { Sparkline, type SparklineMarker } from '@/app/_components/sparkline';
 import { fmt, type Format } from '@/lib/format';
 
@@ -835,7 +836,11 @@ function Layer2Table({
                       A/B
                     </a>
                   )}
-                  {hideable && <HideButton brand={brand} path={r.key} />}
+                  {r.pinned ? (
+                    <UnpinButton brand={brand} path={r.key} />
+                  ) : (
+                    hideable && <HideButton brand={brand} path={r.key} />
+                  )}
                 </div>
                 {r.sublabel && (
                   <div className="truncate text-xs text-zinc-500 dark:text-zinc-400">
@@ -1300,6 +1305,14 @@ export default async function Home({
                 Add a page to watch — paste any URL or path
               </div>
               <AddWatchedInput brand={brand} />
+            </div>
+          )}
+          {hideable && (
+            <div className="border-b border-zinc-200 bg-zinc-50/50 px-5 py-3 dark:border-zinc-800 dark:bg-zinc-900/30">
+              <div className="mb-1.5 text-[11px] uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                Add a page to this list — paste any URL or path (shows even if it isn&rsquo;t top-by-revenue; not the same as Watch)
+              </div>
+              <AddPinnedInput brand={brand} />
             </div>
           )}
           {hideable && <HiddenManager brand={brand} entries={hiddenEntries} />}
