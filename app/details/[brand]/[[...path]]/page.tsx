@@ -220,6 +220,7 @@ export default async function PageDeepDivePage({
           convRate: data.convRate,
           orderCount: data.orderCount,
           revenue: data.revenue,
+          recentDays: data.recentDays,
           sourceBreakdown: data.sourceBreakdown,
           clarity: data.clarity,
           activePromos: data.activePromos,

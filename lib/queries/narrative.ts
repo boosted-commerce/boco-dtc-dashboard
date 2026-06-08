@@ -200,6 +200,18 @@ function noteSignature(comments: PageComment[]): string {
 
 type PageNarrativeCache = { text: string; noteSig: string };
 
+// Defensive cleanup — the prompt forbids markdown, but the model
+// occasionally slips in a "# Heading" or **bold**. Strip heading lines
+// and bold markers so summaries render as clean prose.
+function cleanNarrative(text: string): string {
+  return text
+    .split('\n')
+    .filter((line) => !/^\s*#{1,6}\s/.test(line))
+    .join('\n')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .trim();
+}
+
 // --- Historical snapshots ---
 // Each successful generation is also recorded under today's date so the
 // page can show how its analysis read on previous days. Kept to the most
@@ -286,6 +298,12 @@ export async function getPageNarrative(args: {
   convRate: { current: number; prior: number };
   orderCount: { current: number; prior: number };
   revenue: { current: number; prior: number };
+  // Most recent two complete days, so the summary can lead with daily
+  // movement and consecutive snapshots read as a timeline.
+  recentDays?: {
+    yesterday: { orders: number; revenue: number };
+    dayBefore: { orders: number; revenue: number };
+  };
   sourceBreakdown: {
     source: string;
     sessions: number;
@@ -357,6 +375,14 @@ export async function getPageNarrative(args: {
     ? `This URL is currently the ${args.intelligemsRole} of an active Intelligems A/B test.`
     : '';
 
+  // Most-recent-day movement, so consecutive daily summaries differ
+  // (the trailing window barely moves day-to-day on slow pages).
+  const recentDaysBlock = args.recentDays
+    ? `\nMOST RECENT COMPLETE DAYS (use this to lead with what changed *recently*, since the trailing ${args.period}-day window barely moves day-to-day):
+  - Yesterday: ${args.recentDays.yesterday.orders} orders, $${args.recentDays.yesterday.revenue.toFixed(0)}
+  - Day before: ${args.recentDays.dayBefore.orders} orders, $${args.recentDays.dayBefore.revenue.toFixed(0)}\n`
+    : '';
+
   // Team notes — most recent 10, oldest→newest. Fed in as authoritative
   // operator context so the analysis can be revised in light of them.
   const noteLines = comments
@@ -377,6 +403,7 @@ CORE METRICS (current vs prior ${args.period}-day window):
   - Same-session conv rate: ${args.convRate.current.toFixed(2)}%
   - Orders: ${args.orderCount.current.toLocaleString()}${args.orderCount.prior > 0 ? ` (was ${args.orderCount.prior.toLocaleString()})` : ''}
   - Revenue: $${args.revenue.current.toFixed(0)}${args.revenue.prior > 0 ? ` (was $${args.revenue.prior.toFixed(0)})` : ''}
+${recentDaysBlock}
 
 WHERE CONVERSION CONCENTRATES (source breakdown, top 6 by sessions):
 ${topSources || '  (no breakdown data)'}
@@ -387,8 +414,10 @@ ACTIVE PROMOS (brand-level — may or may not affect this page):
 ${promoLines || 'No active promos.'}
 ${teamNotesBlock}
 INSTRUCTIONS:
+Do NOT output a title, heading, or any markdown (no "#", "*", or bullet points) — start directly with the analysis as plain prose.
+
 Write 3-6 sentences (max 140 words total) that:
-1. Lead with the single most notable thing about THIS page in this window (the metric shift, the friction signal, or the segment imbalance)
+1. Lead with the most recent day-over-day movement when it's notable (yesterday vs the day before), then place it in the context of the trailing window. If yesterday is materially unchanged from the day before, say so in one line rather than repeating prior detail — so each day's summary reads as a fresh timeline entry, not a duplicate
 2. Attribute it to a specific cause grounded in the data: a device/source segment ("conversion has fallen to 0.4% on mobile from Meta"), a Clarity signal ("12 rage-click sessions concentrated on this URL"), an active promo (if relevant), or the Intelligems test if this page is in one
 3. Call out one thing worth attention — a specific friction point, a segment opportunity, or a divergence
 
@@ -416,7 +445,8 @@ Style: factual, concrete, no hype, no hedging, no bullet points or markdown. Use
       return null;
     }
     const json = (await res.json()) as { content?: Array<{ type: string; text?: string }> };
-    const text = json.content?.find((c) => c.type === 'text')?.text?.trim() ?? null;
+    const rawText = json.content?.find((c) => c.type === 'text')?.text?.trim() ?? null;
+    const text = rawText ? cleanNarrative(rawText) : null;
     if (text && redis) {
       try {
         await redis.set(key, { text, noteSig } satisfies PageNarrativeCache, {
