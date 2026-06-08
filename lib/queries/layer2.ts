@@ -1,7 +1,7 @@
 import { execute } from '@/lib/snowflake';
 import { withCache } from '@/lib/cache';
 import type { Brand, DailyPoint, Period } from '@/lib/queries/orders';
-import { getWatchedPaths, getHiddenPaths } from '@/lib/watched-store';
+import { getWatchedPaths, getHiddenPaths, getPinnedPaths } from '@/lib/watched-store';
 import { getChannelSessions, getSessionsByPath } from '@/lib/shopify';
 
 // Layer 2 — page-/product-/source-level tables below Level 1. Each function
@@ -32,6 +32,9 @@ export type Layer2Row = {
   sessions?: number;
   convRate?: number; // percent (0-100)
   priorSessions?: number; // for sessions-based trend on attribution rows
+  // True when this row is force-included via the pinned list (shows even
+  // if it isn't top-by-revenue), rather than discovered organically.
+  pinned?: boolean;
 };
 
 type RawRow = {
@@ -70,7 +73,18 @@ const toRow = (r: RawRow, countNoun: 'orders' | 'units'): Layer2Row => ({
 });
 
 export async function getWatchedPages(brand: Brand, period: Period): Promise<Layer2Row[]> {
-  const watched = await getWatchedPaths(brand);
+  return getRowsForPaths(brand, period, await getWatchedPaths(brand));
+}
+
+// Metrics for an explicit list of paths, force-included even at $0 (LEFT
+// JOIN against a path virtual table). Shared by the Watched tab and the
+// pinned force-includes on the discovered page tabs.
+async function getRowsForPaths(
+  brand: Brand,
+  period: Period,
+  paths: string[],
+): Promise<Layer2Row[]> {
+  const watched = paths;
   if (watched.length === 0) return [];
   // LEFT JOIN against a watched(path) virtual table so pages with no orders
   // in the period still render (as $0 rows) — that's signal too, not noise.
@@ -239,7 +253,24 @@ async function getPagesByType(
     `,
     [period, period * 2, brand, pathPattern, ...hidden],
   );
-  return rows.map((r) => toRow(r, 'orders'));
+  const discovered = rows.map((r) => toRow(r, 'orders'));
+
+  // Force-include pinned pages matching this tab's path prefix, even if
+  // they're below the top-N or have zero orders — without putting them on
+  // the Watched list. Pinned rows that the discovered query already
+  // surfaced just get flagged; the rest are fetched and appended.
+  const pinned = await getPinnedPaths(brand);
+  const prefix = pathPattern.replace(/%$/, '');
+  const pinnedForTab = pinned.filter((p) => p.startsWith(prefix));
+  if (pinnedForTab.length === 0) return discovered;
+
+  const have = new Set(discovered.map((r) => r.key));
+  const missing = pinnedForTab.filter((p) => !have.has(p));
+  const pinnedRows = missing.length ? await getRowsForPaths(brand, period, missing) : [];
+  const pinnedSet = new Set(pinnedForTab);
+  return [...discovered, ...pinnedRows]
+    .map((r) => (pinnedSet.has(r.key) ? { ...r, pinned: true } : r))
+    .sort((a, b) => b.currentRevenue - a.currentRevenue);
 }
 
 export const getPDPs = (brand: Brand, period: Period) =>

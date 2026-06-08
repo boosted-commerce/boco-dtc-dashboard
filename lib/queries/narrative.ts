@@ -4,6 +4,7 @@ import type { Promo } from '@/lib/queries/promos';
 import type { NorthbeamSummary } from '@/lib/queries/northbeam';
 import type { ClarityMetricsMap } from '@/lib/clarity-metrics';
 import type { Layer2Row } from '@/lib/queries/layer2';
+import type { PageComment } from '@/lib/comments-store';
 
 // Server-side narrative generation via Anthropic. Reads ANTHROPIC_API_KEY
 // from Vercel env. Returns null on any error so the dashboard falls
@@ -181,6 +182,100 @@ Write 3-5 sentences (max 110 words total) covering:
 Style: factual, concrete, no hype, no hedging, no bullet points, no markdown. Use specific numbers and named entities (channel/product/page names) from the data. Don't recommend actions unless the data strongly supports one. Write as plain prose.`;
 }
 
+// Stable page-narrative cache key (brand/period/path only). The note
+// signature is stored INSIDE the cached value, not in the key — so adding
+// a note doesn't change the key (which would make a non-watched page's
+// summary "disappear"); instead the cache reads as stale and regenerates.
+function pageNarrativeKey(brand: Brand, period: Period, path: string): string {
+  return `narrative:page:${brand}:${period}:${encodeURIComponent(path)}:v3`;
+}
+
+// Note signature: count + newest timestamp. A change means the notes
+// changed since the cached summary was written → regenerate.
+function noteSignature(comments: PageComment[]): string {
+  return comments.length
+    ? `c${comments.length}-${Math.max(...comments.map((c) => c.createdAt))}`
+    : 'c0';
+}
+
+type PageNarrativeCache = { text: string; noteSig: string };
+
+// --- Historical snapshots ---
+// Each successful generation is also recorded under today's date so the
+// page can show how its analysis read on previous days. Kept to the most
+// recent HISTORY_DAYS dates per (brand, period, path).
+const HISTORY_DAYS = 10;
+const histKey = (brand: Brand, period: Period, path: string) =>
+  `narrative:hist:${brand}:${period}:${encodeURIComponent(path)}`;
+
+export type NarrativeSnapshot = { date: string; text: string };
+
+async function recordPageNarrativeSnapshot(
+  brand: Brand,
+  period: Period,
+  path: string,
+  text: string,
+): Promise<void> {
+  const redis = getRedis();
+  if (!redis) return;
+  const date = new Date().toISOString().slice(0, 10); // UTC YYYY-MM-DD
+  const key = histKey(brand, period, path);
+  try {
+    await redis.hset(key, { [date]: text });
+    // Prune to the newest HISTORY_DAYS dates.
+    const all = await redis.hgetall<Record<string, string>>(key);
+    if (all) {
+      const dates = Object.keys(all).sort(); // ascending
+      if (dates.length > HISTORY_DAYS) {
+        const remove = dates.slice(0, dates.length - HISTORY_DAYS);
+        if (remove.length) await redis.hdel(key, ...remove);
+      }
+    }
+  } catch {
+    /* history is best-effort — never block the summary on it */
+  }
+}
+
+// Past daily snapshots for a page+period, newest first (up to HISTORY_DAYS).
+export async function getPageNarrativeHistory(
+  brand: Brand,
+  period: Period,
+  path: string,
+): Promise<NarrativeSnapshot[]> {
+  const redis = getRedis();
+  if (!redis) return [];
+  try {
+    const all = await redis.hgetall<Record<string, string>>(histKey(brand, period, path));
+    if (!all) return [];
+    return Object.entries(all)
+      .map(([date, text]) => ({ date, text }))
+      .sort((a, b) => b.date.localeCompare(a.date));
+  } catch {
+    return [];
+  }
+}
+
+// Read-only peek: returns a cached page narrative's text (regardless of
+// note staleness) or null. NEVER calls the API. Used to decide whether a
+// summary already exists for a non-watched page — if it does, the page
+// regenerates on note changes; if not, it shows a Generate button.
+export async function peekPageNarrative(args: {
+  brand: Brand;
+  period: Period;
+  path: string;
+}): Promise<string | null> {
+  const redis = getRedis();
+  if (!redis) return null;
+  try {
+    const cached = await redis.get<PageNarrativeCache>(
+      pageNarrativeKey(args.brand, args.period, args.path),
+    );
+    return cached?.text ?? null;
+  } catch {
+    return null;
+  }
+}
+
 // Per-page narrative — same model, page-scoped prompt. Different
 // cache key so brand-level and page-level narratives don't collide.
 export async function getPageNarrative(args: {
@@ -206,17 +301,27 @@ export async function getPageNarrative(args: {
   } | null;
   activePromos: Promo[];
   intelligemsRole: 'origin' | 'destination' | null;
+  // Team notes left on this page — fed in as authoritative context so
+  // the analysis revises in light of them (e.g. a known redirect bug).
+  comments?: PageComment[];
+  // Force a fresh generation, overwriting any cached summary. Used by the
+  // "refresh analysis" action.
+  force?: boolean;
 }): Promise<string | null> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return null;
 
+  const comments = args.comments ?? [];
   const redis = getRedis();
-  const key = `narrative:page:${args.brand}:${args.period}:${encodeURIComponent(args.path)}:v1`;
+  const key = pageNarrativeKey(args.brand, args.period, args.path);
+  const noteSig = noteSignature(comments);
 
-  if (redis) {
+  // Use the cache only when it isn't forced AND the notes haven't changed
+  // since it was written. A note edit makes it stale → regenerate.
+  if (redis && !args.force) {
     try {
-      const cached = await redis.get<string>(key);
-      if (cached) return cached;
+      const cached = await redis.get<PageNarrativeCache>(key);
+      if (cached && cached.noteSig === noteSig) return cached.text;
     } catch { /* fall through */ }
   }
 
@@ -252,6 +357,16 @@ export async function getPageNarrative(args: {
     ? `This URL is currently the ${args.intelligemsRole} of an active Intelligems A/B test.`
     : '';
 
+  // Team notes — most recent 10, oldest→newest. Fed in as authoritative
+  // operator context so the analysis can be revised in light of them.
+  const noteLines = comments
+    .slice(-10)
+    .map((c) => `  - ${c.author}: ${c.text}`)
+    .join('\n');
+  const teamNotesBlock = noteLines
+    ? `\nTEAM NOTES & QUESTIONS (operators left these — context, hypotheses, or questions). Treat them as leads to investigate, NOT as established fact. For each: weigh it against the data above and either corroborate it, refine it, or push back with specific reasons if the numbers don't support it. If a note poses a question, answer it directly from the data. Reach your own conclusion:\n${noteLines}\n`
+    : '';
+
   const prompt = `You are writing a focused narrative for a single landing page on the Boosted Commerce DTC dashboard. The audience is the operator who clicked into this page to understand what's happening on it.
 
 PAGE: ${args.path} · BRAND: ${args.brand} · WINDOW: last ${args.period} days
@@ -270,12 +385,14 @@ ${clarityLines}
 
 ACTIVE PROMOS (brand-level — may or may not affect this page):
 ${promoLines || 'No active promos.'}
-
+${teamNotesBlock}
 INSTRUCTIONS:
-Write 3-5 sentences (max 110 words total) that:
+Write 3-6 sentences (max 140 words total) that:
 1. Lead with the single most notable thing about THIS page in this window (the metric shift, the friction signal, or the segment imbalance)
 2. Attribute it to a specific cause grounded in the data: a device/source segment ("conversion has fallen to 0.4% on mobile from Meta"), a Clarity signal ("12 rage-click sessions concentrated on this URL"), an active promo (if relevant), or the Intelligems test if this page is in one
 3. Call out one thing worth attention — a specific friction point, a segment opportunity, or a divergence
+
+Engage with any team notes critically rather than restating them: validate each against the data — confirm it, refine it, or respectfully disagree with specific reasons. Answer any question a note poses directly from the data. Where the data supports it, finish with your own concrete conclusion or suggestion rather than echoing the note.
 
 Style: factual, concrete, no hype, no hedging, no bullet points or markdown. Use specific numbers and named segments from the data. Don't recommend actions unless the data strongly supports one. If a metric is "new" (no prior data), say so explicitly rather than implying it shifted.`;
 
@@ -301,7 +418,13 @@ Style: factual, concrete, no hype, no hedging, no bullet points or markdown. Use
     const json = (await res.json()) as { content?: Array<{ type: string; text?: string }> };
     const text = json.content?.find((c) => c.type === 'text')?.text?.trim() ?? null;
     if (text && redis) {
-      try { await redis.set(key, text, { ex: CACHE_TTL_SECONDS }); } catch {}
+      try {
+        await redis.set(key, { text, noteSig } satisfies PageNarrativeCache, {
+          ex: CACHE_TTL_SECONDS,
+        });
+      } catch {}
+      // Record today's snapshot for the historical timeline (best-effort).
+      await recordPageNarrativeSnapshot(args.brand, args.period, args.path, text);
     }
     return text;
   } catch (err) {
