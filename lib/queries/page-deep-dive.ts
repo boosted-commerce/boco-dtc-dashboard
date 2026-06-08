@@ -25,6 +25,13 @@ export type PageDeepDive = {
   convRate: { current: number; prior: number }; // percent (same-session)
   orderCount: { current: number; prior: number };
   revenue: { current: number; prior: number };
+  // Most recent two complete days (orders + revenue), so the AI summary
+  // can lead with day-over-day movement and consecutive daily snapshots
+  // read as a timeline rather than near-duplicate trailing-window text.
+  recentDays: {
+    yesterday: { orders: number; revenue: number };
+    dayBefore: { orders: number; revenue: number };
+  };
   // Device × source breakdown for the current window
   sourceBreakdown: SourceBreakdownRow[];
   // Clarity friction signals for the path (last 3 days per Clarity API)
@@ -42,6 +49,10 @@ type OrdersRow = {
   CURRENT_REVENUE: string;
   PRIOR_COUNT: string;
   PRIOR_REVENUE: string;
+  YDAY_COUNT: string;
+  YDAY_REVENUE: string;
+  DBEFORE_COUNT: string;
+  DBEFORE_REVENUE: string;
 };
 
 const n = (v: unknown): number => Number(v ?? 0) || 0;
@@ -50,7 +61,18 @@ async function getOrdersForPath(
   brand: Brand,
   path: string,
   period: Period,
-): Promise<{ current: number; prior: number; currentRev: number; priorRev: number }> {
+): Promise<{
+  current: number;
+  prior: number;
+  currentRev: number;
+  priorRev: number;
+  ydayCount: number;
+  ydayRev: number;
+  dbeforeCount: number;
+  dbeforeRev: number;
+}> {
+  // Yesterday = [-1 day, today); day-before = [-2 days, -1 day). Literal
+  // offsets (no extra binds) — both fall inside the classified window.
   const rows = await execute<OrdersRow>(
     `
       WITH classified AS (
@@ -67,7 +89,11 @@ async function getOrdersForPath(
         COALESCE(SUM(IFF(CREATED_AT >= DATEADD(day, -?, DATE_TRUNC('day', CURRENT_TIMESTAMP())), 1, 0)), 0) AS CURRENT_COUNT,
         COALESCE(SUM(IFF(CREATED_AT >= DATEADD(day, -?, DATE_TRUNC('day', CURRENT_TIMESTAMP())), TOTAL_PRICE_AMOUNT, 0)), 0) AS CURRENT_REVENUE,
         COALESCE(SUM(IFF(CREATED_AT < DATEADD(day, -?, DATE_TRUNC('day', CURRENT_TIMESTAMP())), 1, 0)), 0) AS PRIOR_COUNT,
-        COALESCE(SUM(IFF(CREATED_AT < DATEADD(day, -?, DATE_TRUNC('day', CURRENT_TIMESTAMP())), TOTAL_PRICE_AMOUNT, 0)), 0) AS PRIOR_REVENUE
+        COALESCE(SUM(IFF(CREATED_AT < DATEADD(day, -?, DATE_TRUNC('day', CURRENT_TIMESTAMP())), TOTAL_PRICE_AMOUNT, 0)), 0) AS PRIOR_REVENUE,
+        COALESCE(SUM(IFF(CREATED_AT >= DATEADD(day, -1, DATE_TRUNC('day', CURRENT_TIMESTAMP())), 1, 0)), 0) AS YDAY_COUNT,
+        COALESCE(SUM(IFF(CREATED_AT >= DATEADD(day, -1, DATE_TRUNC('day', CURRENT_TIMESTAMP())), TOTAL_PRICE_AMOUNT, 0)), 0) AS YDAY_REVENUE,
+        COALESCE(SUM(IFF(CREATED_AT >= DATEADD(day, -2, DATE_TRUNC('day', CURRENT_TIMESTAMP())) AND CREATED_AT < DATEADD(day, -1, DATE_TRUNC('day', CURRENT_TIMESTAMP())), 1, 0)), 0) AS DBEFORE_COUNT,
+        COALESCE(SUM(IFF(CREATED_AT >= DATEADD(day, -2, DATE_TRUNC('day', CURRENT_TIMESTAMP())) AND CREATED_AT < DATEADD(day, -1, DATE_TRUNC('day', CURRENT_TIMESTAMP())), TOTAL_PRICE_AMOUNT, 0)), 0) AS DBEFORE_REVENUE
       FROM classified
       WHERE REGEXP_REPLACE(LANDING_PATH, '(^https?://[^/]+)|/$', '') = ?
     `,
@@ -79,6 +105,10 @@ async function getOrdersForPath(
     prior: n(r?.PRIOR_COUNT),
     currentRev: n(r?.CURRENT_REVENUE),
     priorRev: n(r?.PRIOR_REVENUE),
+    ydayCount: n(r?.YDAY_COUNT),
+    ydayRev: n(r?.YDAY_REVENUE),
+    dbeforeCount: n(r?.DBEFORE_COUNT),
+    dbeforeRev: n(r?.DBEFORE_REVENUE),
   };
 }
 
@@ -131,6 +161,10 @@ async function getPageDeepDiveUncached(
     convRate: { current: sess?.convRate ?? 0, prior: 0 },
     orderCount: { current: orders.current, prior: orders.prior },
     revenue: { current: orders.currentRev, prior: orders.priorRev },
+    recentDays: {
+      yesterday: { orders: orders.ydayCount, revenue: orders.ydayRev },
+      dayBefore: { orders: orders.dbeforeCount, revenue: orders.dbeforeRev },
+    },
     sourceBreakdown,
     clarity: clarityMap.get(path) ?? null,
     activePromos,
