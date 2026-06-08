@@ -35,6 +35,7 @@ import { AddWatchedInput } from '@/app/_components/add-watched-input';
 import { HideButton } from '@/app/_components/hide-button';
 import { HiddenManager } from '@/app/_components/hidden-manager';
 import { AddPinnedInput, UnpinButton } from '@/app/_components/pin-controls';
+import { isAuthConfigured } from '@/lib/auth';
 import { Sparkline, type SparklineMarker } from '@/app/_components/sparkline';
 import { fmt, type Format } from '@/lib/format';
 
@@ -1124,6 +1125,14 @@ export default async function Home({
               ariaLabel="Select period"
               preserveScroll
             />
+            {isAuthConfigured() && (
+              <a
+                href="/api/auth/logout"
+                className="text-xs text-zinc-400 underline decoration-zinc-300 underline-offset-2 hover:text-zinc-700 dark:text-zinc-500 dark:hover:text-zinc-200"
+              >
+                Sign out
+              </a>
+            )}
           </div>
         </header>
 
