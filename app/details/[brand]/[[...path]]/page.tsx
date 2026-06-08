@@ -11,6 +11,7 @@ import { getComments } from '@/lib/comments-store';
 import { getWatchedPaths } from '@/lib/watched-store';
 import { PageComments } from '@/app/_components/page-comments';
 import { GenerateNarrativeButton } from '@/app/_components/narrative-actions';
+import { HistoryPicker } from '@/app/_components/history-picker';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -308,35 +309,16 @@ export default async function PageDeepDivePage({
             </div>
           </div>
 
-          {/* History timeline — past daily snapshots (up to 10 days). */}
+          {/* History — past daily snapshots (up to 10 days). */}
           {history.length > 0 && (
-            <div className="mb-3 flex flex-wrap items-center gap-1.5">
-              <span className="mr-1 text-[10px] uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-                History
-              </span>
-              <Link
-                href={`/details/${brand}${path === '/' ? '' : path}?period=${period}`}
-                className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                  !viewingHistory
-                    ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
-                    : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
-                }`}
-              >
-                Latest
-              </Link>
-              {history.map((h) => (
-                <Link
-                  key={h.date}
-                  href={`/details/${brand}${path === '/' ? '' : path}?period=${period}&asOf=${h.date}`}
-                  className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                    asOf === h.date
-                      ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
-                      : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
-                  }`}
-                >
-                  {fmtSnapshotDate(h.date)}
-                </Link>
-              ))}
+            <div className="mb-3">
+              <HistoryPicker
+                brand={brand}
+                path={path}
+                period={period}
+                active={asOf ?? 'latest'}
+                options={history.map((h) => ({ value: h.date, label: fmtSnapshotDate(h.date) }))}
+              />
             </div>
           )}
 
