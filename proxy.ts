@@ -12,7 +12,14 @@ export function proxy(request: NextRequest) {
   if (!isAuthConfigured()) return NextResponse.next();
 
   const { pathname, search } = request.nextUrl;
-  if (pathname === '/login' || pathname.startsWith('/api/auth/')) {
+  // Public paths: the login page, the auth endpoints, and the cron
+  // endpoint (which protects itself via CRON_SECRET, and is hit by Vercel
+  // Cron with no session cookie).
+  if (
+    pathname === '/login' ||
+    pathname.startsWith('/api/auth/') ||
+    pathname.startsWith('/api/cron/')
+  ) {
     return NextResponse.next();
   }
 
