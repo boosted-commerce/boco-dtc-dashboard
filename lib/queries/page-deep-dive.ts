@@ -145,6 +145,10 @@ async function getPageDeepDiveUncached(
       prior: 0,
       currentRev: 0,
       priorRev: 0,
+      ydayCount: 0,
+      ydayRev: 0,
+      dbeforeCount: 0,
+      dbeforeRev: 0,
     })),
   ]);
 
