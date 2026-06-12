@@ -185,7 +185,11 @@ function TestResults({ results }: { results: ExperienceResults }) {
               <tr key={v.id} className="border-t border-amber-100 dark:border-amber-900/40">
                 <td className="py-1 pr-3 text-zinc-700 dark:text-zinc-300">
                   {v.name}
-                  {v.isControl && <span className="ml-1 text-[10px] text-zinc-400">(control)</span>}
+                  {v.isControl && (
+                    <span className="ml-1 text-[10px] text-zinc-400">
+                      {multi ? '(control)' : '(rolled out)'}
+                    </span>
+                  )}
                 </td>
                 <td className="py-1 px-2 text-right tabular-nums">{v.visitors.toLocaleString()}</td>
                 <td className="py-1 px-2 text-right tabular-nums">{pct(v.convRate)}</td>
@@ -465,6 +469,23 @@ export default async function PageDeepDivePage({
                           : 'targeted here'}
                     </span>
                   </div>
+                  {t.redirectsTo.length > 0 && (
+                    <div className="mt-1 rounded-md bg-amber-100/70 px-2 py-1 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                      ↪ Visitors to this page are redirected to{' '}
+                      {t.redirectsTo.map((dest, i) => (
+                        <span key={dest}>
+                          {i > 0 && ', '}
+                          <Link
+                            href={`/details/${brand}${dest === '/' ? '' : dest}?period=${period}`}
+                            className="font-medium underline decoration-amber-300 underline-offset-2 hover:decoration-amber-500"
+                          >
+                            {dest}
+                          </Link>
+                        </span>
+                      ))}{' '}
+                      — that&rsquo;s where customers actually land, so this page&rsquo;s own metrics read low.
+                    </div>
+                  )}
                   {t.results && <TestResults results={t.results} />}
                 </li>
               ))}

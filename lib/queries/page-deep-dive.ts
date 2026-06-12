@@ -59,6 +59,8 @@ export type PageDeepDive = {
     testUrl: string;
     role: 'origin' | 'destination' | 'targeted';
     results: ExperienceResults | null;
+    // When this page is a redirect origin, where its traffic is sent.
+    redirectsTo: string[];
   }[];
 };
 
@@ -212,6 +214,9 @@ async function getPageDeepDiveUncached(
           ? 'destination'
           : 'targeted') as 'origin' | 'destination' | 'targeted',
       results: await getExperienceResults(brand, t.id).catch(() => null),
+      redirectsTo: t.redirects
+        .filter((r) => r.origin === path)
+        .map((r) => r.destination),
     })),
   );
 

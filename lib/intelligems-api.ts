@@ -49,6 +49,7 @@ export type ActiveTest = {
   origins: string[]; // redirect origins (paths)
   destinations: string[]; // redirect destinations (paths)
   targetPaths: string[]; // page-targeting urlPath values (on-site edits)
+  redirects: { origin: string; destination: string }[]; // paired origin→destination
 };
 
 // Normalize a URL or path to a clean path (strip protocol+host, query,
@@ -180,12 +181,14 @@ function mapToActiveTests(experiences: RawExperience[]): ActiveTest[] {
     const origins = new Set<string>();
     const destinations = new Set<string>();
     const targetPaths = new Set<string>();
+    const pairs = new Map<string, string>(); // origin → destination
     for (const v of e.variations ?? []) {
       for (const r of v.redirects ?? []) {
         const o = toPath(r.originUrl);
         const d = toPath(r.destinationUrl);
         if (o) origins.add(o);
         if (d) destinations.add(d);
+        if (o && d) pairs.set(o, d);
       }
     }
     // On-site edits target by URL path (no redirect). Extract those.
@@ -205,6 +208,7 @@ function mapToActiveTests(experiences: RawExperience[]): ActiveTest[] {
       origins: [...origins],
       destinations: [...destinations],
       targetPaths: [...targetPaths],
+      redirects: [...pairs].map(([origin, destination]) => ({ origin, destination })),
     };
   });
 }
@@ -219,6 +223,7 @@ function staticToActive(brand: Brand): ActiveTest[] {
     origins: t.origins,
     destinations: t.destinations,
     targetPaths: [],
+    redirects: [],
   }));
 }
 
