@@ -84,6 +84,23 @@ export async function fetchActiveExperiences(brand: Brand): Promise<RawExperienc
   return (json.experiencesList ?? []).filter((e) => !e.status || e.status === 'started');
 }
 
+// Raw analytics for one experiment (cohort-attributed results per
+// variation + significance). Schema TBD — used by the debug route to
+// capture the real shape before building the Tier 2 results card.
+export async function fetchExperienceAnalytics(
+  brand: Brand,
+  experienceId: string,
+): Promise<unknown> {
+  const t = token(brand);
+  if (!t) return { error: 'no token' };
+  const res = await fetch(`${BASE}/analytics/resource/${experienceId}`, {
+    headers: { 'intelligems-access-token': t, accept: 'application/json' },
+    cache: 'no-store',
+  });
+  if (!res.ok) return { error: `HTTP ${res.status}`, body: await res.text().catch(() => '') };
+  return res.json();
+}
+
 function mapToActiveTests(experiences: RawExperience[]): ActiveTest[] {
   return experiences.map((e) => {
     const origins = new Set<string>();

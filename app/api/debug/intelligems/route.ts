@@ -2,6 +2,7 @@ import { type NextRequest } from 'next/server';
 import { parseBrand } from '@/lib/queries/orders';
 import {
   fetchActiveExperiences,
+  fetchExperienceAnalytics,
   getActiveTests,
   matchActiveTestsForPath,
 } from '@/lib/intelligems-api';
@@ -18,7 +19,16 @@ export async function GET(request: NextRequest) {
   const sp = new URL(request.url).searchParams;
   const brand = parseBrand(sp.get('brand'));
   const path = sp.get('path');
+  const analyticsId = sp.get('analytics'); // experienceId → dump raw analytics
   const tokenSet = Boolean(process.env[`INTELLIGEMS_API_TOKEN_${brand}`]);
+
+  // Capture the raw analytics shape for one experiment (Tier 2 schema).
+  if (analyticsId) {
+    const analytics = await fetchExperienceAnalytics(brand, analyticsId).catch((e) => ({
+      error: String(e),
+    }));
+    return Response.json({ brand, tokenSet, analyticsId, analytics });
+  }
 
   const [active, raw] = await Promise.all([
     getActiveTests(brand).catch(() => []),
