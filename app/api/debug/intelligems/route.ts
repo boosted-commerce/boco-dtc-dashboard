@@ -20,14 +20,21 @@ export async function GET(request: NextRequest) {
   ]);
 
   // Trim the raw payload to the fields that matter, to keep it readable.
+  // Includes targeting fields so we can see how template/onsite tests
+  // (no redirect paths) encode which page/product they run on.
   const rawSample = Array.isArray(raw)
-    ? raw.slice(0, 5).map((e) => ({
-        id: e.id,
-        name: e.name,
-        status: e.status,
-        type: e.type,
-        variations: (e.variations ?? []).map((v) => ({ redirects: v.redirects ?? null })),
-      }))
+    ? raw.slice(0, 8).map((e) => {
+        const x = e as unknown as Record<string, unknown>;
+        return {
+          id: e.id,
+          name: e.name,
+          status: e.status,
+          type: e.type,
+          pageTargeting: x.experiencePageTargeting ?? null,
+          productTargeting: x.experienceProductTargeting ?? null,
+          variations: (e.variations ?? []).map((v) => ({ redirects: v.redirects ?? null })),
+        };
+      })
     : raw;
 
   return Response.json({ brand, tokenSet, tests, rawCount: Array.isArray(raw) ? raw.length : 0, rawSample });
