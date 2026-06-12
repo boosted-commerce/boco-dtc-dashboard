@@ -153,6 +153,17 @@ function ScrollBar({ pct }: { pct: number | null }) {
   );
 }
 
+// Human label for an Intelligems experience type.
+function igTypeLabel(type: string): string {
+  if (type === 'personalization' || type === 'content/url') return 'Split URL';
+  if (type === 'content/onsiteEdits') return 'On-site edit';
+  if (type === 'content/template') return 'Template';
+  if (type === 'content/theme') return 'Theme';
+  if (type === 'pricing') return 'Pricing';
+  if (type === 'shipping') return 'Shipping';
+  return type;
+}
+
 // Format a stored snapshot date (YYYY-MM-DD) as e.g. "Jun 1". Parsed at
 // noon UTC to avoid a timezone off-by-one.
 function fmtSnapshotDate(d: string): string {
@@ -358,6 +369,43 @@ export default async function PageDeepDivePage({
               .filter((p) => p.state === 'active')
               .map((p) => `"${p.name}" (ends ${p.endDate})`)
               .join(' · ')}
+          </section>
+        )}
+
+        {/* Active A/B tests located to this page (live from Intelligems) */}
+        {(data.activeTests?.length ?? 0) > 0 && (
+          <section className="mb-6 rounded-lg border border-amber-200 bg-amber-50/40 px-5 py-4 dark:border-amber-900/60 dark:bg-amber-950/10">
+            <div className="mb-2 text-sm font-medium text-amber-800 dark:text-amber-300">
+              Active A/B tests on this page
+            </div>
+            <ul className="space-y-2">
+              {data.activeTests.map((t) => (
+                <li key={t.id} className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className="inline-flex items-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+                    {igTypeLabel(t.type)}
+                  </span>
+                  <a
+                    href={t.testUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-medium text-sky-700 underline decoration-sky-200 underline-offset-2 hover:decoration-sky-500 dark:text-sky-400 dark:decoration-sky-900"
+                  >
+                    {t.name}
+                  </a>
+                  <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                    {t.role === 'origin'
+                      ? 'redirect origin'
+                      : t.role === 'destination'
+                        ? 'redirect destination'
+                        : 'targeted here'}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-[11px] text-zinc-500 dark:text-zinc-500">
+              Live from Intelligems. Template-only tests aren&rsquo;t listed — Intelligems doesn&rsquo;t
+              expose their page path via the API.
+            </p>
           </section>
         )}
 

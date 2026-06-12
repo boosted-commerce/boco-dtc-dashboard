@@ -3,12 +3,19 @@ import { INTELLIGEMS_TESTS, type IntelligemsTest } from '@/lib/intelligems-tests
 import { withCache } from '@/lib/cache';
 
 // Live Intelligems External API client. Reads per-brand keys from
-// `INTELLIGEMS_API_TOKEN_<BRAND>` env vars and pulls active experiments so
-// the A/B badges populate automatically — replacing the hand-maintained
-// list in intelligems-tests.ts. Falls back to that static list when a
-// brand has no token or the API is unavailable, so nothing breaks.
+// `INTELLIGEMS_API_TOKEN_<BRAND>` and pulls active experiments so the
+// dashboard reflects real tests automatically (replacing the
+// hand-maintained intelligems-tests.ts list). Falls back to that static
+// list when a brand has no token or the API is unavailable.
 //
-// Auth: `intelligems-access-token` header. Docs:
+// Two consumers:
+//   - Layer 2 A/B badge: redirect / split-URL tests (origin/destination
+//     paths) → getIntelligemsTests + matchIntelligemsTest.
+//   - Layer 3 deep dive "Active A/B tests on this page": ALL tests we can
+//     locate to a path — redirects PLUS on-site edits with URL targeting
+//     → getActiveTests + matchActiveTestsForPath.
+//
+// Auth header: `intelligems-access-token`. Docs:
 // https://docs.intelligems.io/developer-resources/external-api
 
 const BASE = 'https://api.intelligems.io/v25-10-beta';
@@ -18,21 +25,34 @@ function token(brand: Brand): string | null {
   return process.env[`INTELLIGEMS_API_TOKEN_${brand}`] ?? null;
 }
 
-// A redirect (split-URL test) entry, per the API schema:
-// variations[].redirects[].{originUrl,destinationUrl}.
 type RawRedirect = { originUrl?: string | null; destinationUrl?: string | null };
 type RawVariation = { redirects?: RawRedirect[] | null };
+type RawTargetQuery = { value?: string | null; type?: string | null };
+type RawTargetExpression = { query?: RawTargetQuery | null };
+type RawPageTargeting = { expression?: RawTargetExpression[] | null };
 type RawExperience = {
   id: string;
   name?: string | null;
   status?: string | null; // pending | started | ended | paused
   type?: string | null;
   variations?: RawVariation[] | null;
+  experiencePageTargeting?: RawPageTargeting[] | null;
 };
 type ExperiencesListResponse = { experiencesList?: RawExperience[] | null };
 
-// Normalize a URL or path to a clean path the dashboard matches on
-// (strip protocol+host, query, fragment, trailing slash).
+// A located Intelligems test: everything we can map to page paths.
+export type ActiveTest = {
+  id: string;
+  name: string;
+  type: string; // e.g. personalization | content/template | content/onsiteEdits
+  testUrl: string;
+  origins: string[]; // redirect origins (paths)
+  destinations: string[]; // redirect destinations (paths)
+  targetPaths: string[]; // page-targeting urlPath values (on-site edits)
+};
+
+// Normalize a URL or path to a clean path (strip protocol+host, query,
+// fragment, trailing slash).
 function toPath(raw: string | null | undefined): string | null {
   if (!raw) return null;
   let v = raw.trim();
@@ -48,7 +68,7 @@ function toPath(raw: string | null | undefined): string | null {
   return v || '/';
 }
 
-// Raw fetch of active experiences for a brand (used by the debug route).
+// Raw fetch of active experiences for a brand (also used by the debug route).
 export async function fetchActiveExperiences(brand: Brand): Promise<RawExperience[]> {
   const t = token(brand);
   if (!t) return [];
@@ -64,14 +84,11 @@ export async function fetchActiveExperiences(brand: Brand): Promise<RawExperienc
   return (json.experiencesList ?? []).filter((e) => !e.status || e.status === 'started');
 }
 
-// Map raw experiences → the dashboard's IntelligemsTest shape, keeping
-// only those with redirect (split-URL) origin/destination paths — those
-// are what the page-level A/B badge keys on.
-function mapExperiences(experiences: RawExperience[]): IntelligemsTest[] {
-  const tests: IntelligemsTest[] = [];
-  for (const e of experiences) {
+function mapToActiveTests(experiences: RawExperience[]): ActiveTest[] {
+  return experiences.map((e) => {
     const origins = new Set<string>();
     const destinations = new Set<string>();
+    const targetPaths = new Set<string>();
     for (const v of e.variations ?? []) {
       for (const r of v.redirects ?? []) {
         const o = toPath(r.originUrl);
@@ -80,37 +97,73 @@ function mapExperiences(experiences: RawExperience[]): IntelligemsTest[] {
         if (d) destinations.add(d);
       }
     }
-    if (origins.size === 0 && destinations.size === 0) continue;
-    tests.push({
+    // On-site edits target by URL path (no redirect). Extract those.
+    for (const pt of e.experiencePageTargeting ?? []) {
+      for (const ex of pt.expression ?? []) {
+        if (ex.query?.type === 'urlPath') {
+          const p = toPath(ex.query.value);
+          if (p) targetPaths.add(p);
+        }
+      }
+    }
+    return {
+      id: e.id,
       name: e.name ?? 'Intelligems test',
+      type: e.type ?? 'test',
       testUrl: `https://app.intelligems.io/experiment/${e.id}`,
       origins: [...origins],
       destinations: [...destinations],
-    });
-  }
-  return tests;
+      targetPaths: [...targetPaths],
+    };
+  });
 }
 
-// Active Intelligems tests for a brand, cached. Live from the API when a
-// token is set; otherwise the static fallback list.
-export async function getIntelligemsTests(brand: Brand): Promise<IntelligemsTest[]> {
-  if (!token(brand)) return INTELLIGEMS_TESTS[brand] ?? [];
-  return withCache(`intelligems:${brand}:v1`, CACHE_TTL_SECONDS, async () => {
+// Static fallback (intelligems-tests.ts) → ActiveTest shape.
+function staticToActive(brand: Brand): ActiveTest[] {
+  return (INTELLIGEMS_TESTS[brand] ?? []).map((t) => ({
+    id: t.testUrl.split('/').pop() ?? t.name,
+    name: t.name,
+    type: 'content/url',
+    testUrl: t.testUrl,
+    origins: t.origins,
+    destinations: t.destinations,
+    targetPaths: [],
+  }));
+}
+
+// All active tests for a brand (located to paths where possible), cached.
+export async function getActiveTests(brand: Brand): Promise<ActiveTest[]> {
+  if (!token(brand)) return staticToActive(brand);
+  return withCache(`intelligems:active:${brand}:v1`, CACHE_TTL_SECONDS, async () => {
     try {
       const experiences = await fetchActiveExperiences(brand);
-      const mapped = mapExperiences(experiences);
-      // If the API returned nothing usable, fall back to the static list
-      // rather than dropping badges entirely.
-      return mapped.length > 0 ? mapped : INTELLIGEMS_TESTS[brand] ?? [];
+      const mapped = mapToActiveTests(experiences);
+      // If the API yielded nothing locatable, keep the static fallback.
+      const locatable = mapped.some(
+        (t) => t.origins.length || t.destinations.length || t.targetPaths.length,
+      );
+      return locatable ? mapped : staticToActive(brand);
     } catch (err) {
       console.error(`Intelligems ${brand} fetch failed:`, err);
-      return INTELLIGEMS_TESTS[brand] ?? [];
+      return staticToActive(brand);
     }
   });
 }
 
-// Pure lookup over an already-fetched test list (so callers fetch once,
-// then match many paths synchronously). Mirrors findIntelligemsTest.
+// Layer 2 badge view: redirect/split-URL tests only (origin/destination).
+export async function getIntelligemsTests(brand: Brand): Promise<IntelligemsTest[]> {
+  const active = await getActiveTests(brand);
+  return active
+    .filter((t) => t.origins.length > 0 || t.destinations.length > 0)
+    .map((t) => ({
+      name: t.name,
+      testUrl: t.testUrl,
+      origins: t.origins,
+      destinations: t.destinations,
+    }));
+}
+
+// Badge lookup (redirect tests) — origin vs destination role.
 export function matchIntelligemsTest(
   tests: IntelligemsTest[],
   path: string,
@@ -120,4 +173,15 @@ export function matchIntelligemsTest(
     if (test.destinations.includes(path)) return { test, role: 'destination' };
   }
   return null;
+}
+
+// Deep-dive lookup: every active test that touches this page (redirect
+// origin/destination OR on-site URL targeting).
+export function matchActiveTestsForPath(tests: ActiveTest[], path: string): ActiveTest[] {
+  return tests.filter(
+    (t) =>
+      t.origins.includes(path) ||
+      t.destinations.includes(path) ||
+      t.targetPaths.includes(path),
+  );
 }
