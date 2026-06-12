@@ -12,6 +12,7 @@ import { getWatchedPaths } from '@/lib/watched-store';
 import { PageComments } from '@/app/_components/page-comments';
 import { GenerateNarrativeButton } from '@/app/_components/narrative-actions';
 import { HistoryPicker } from '@/app/_components/history-picker';
+import type { ExperienceResults } from '@/lib/intelligems-api';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -149,6 +150,69 @@ function ScrollBar({ pct }: { pct: number | null }) {
         Average visitor scrolled to {Math.round(pct)}% of the page. Section-level breakdown will require
         custom storefront instrumentation; coming later.
       </div>
+    </div>
+  );
+}
+
+// Cohort-attributed A/B results table for one test (control vs variants
+// with RPV uplift), or a single-row summary for a 100% rollout.
+function TestResults({ results }: { results: ExperienceResults }) {
+  const vars = results.variations;
+  if (vars.length === 0) return null;
+  const control = vars.find((v) => v.isControl) ?? vars[0];
+  const multi = vars.length > 1;
+  const pct = (n: number | null) => (n == null ? '—' : `${(n * 100).toFixed(2)}%`);
+  const money = (n: number | null) => (n == null ? '—' : `$${n.toFixed(2)}`);
+  const uplift = (v: number | null, base: number | null) =>
+    v == null || base == null || base === 0 ? null : (v - base) / base;
+
+  return (
+    <div className="mt-2 overflow-x-auto">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="text-left text-zinc-400 dark:text-zinc-500">
+            <th className="py-1 pr-3 font-medium">Variation</th>
+            <th className="py-1 px-2 text-right font-medium">Visitors</th>
+            <th className="py-1 px-2 text-right font-medium">Conv</th>
+            <th className="py-1 px-2 text-right font-medium">RPV</th>
+            {multi && <th className="py-1 pl-2 text-right font-medium">RPV vs control</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {vars.map((v) => {
+            const u = multi && !v.isControl ? uplift(v.rpv, control.rpv) : null;
+            return (
+              <tr key={v.id} className="border-t border-amber-100 dark:border-amber-900/40">
+                <td className="py-1 pr-3 text-zinc-700 dark:text-zinc-300">
+                  {v.name}
+                  {v.isControl && <span className="ml-1 text-[10px] text-zinc-400">(control)</span>}
+                </td>
+                <td className="py-1 px-2 text-right tabular-nums">{v.visitors.toLocaleString()}</td>
+                <td className="py-1 px-2 text-right tabular-nums">{pct(v.convRate)}</td>
+                <td className="py-1 px-2 text-right tabular-nums">{money(v.rpv)}</td>
+                {multi && (
+                  <td
+                    className={`py-1 pl-2 text-right tabular-nums ${
+                      u == null
+                        ? ''
+                        : u >= 0
+                          ? 'text-emerald-600 dark:text-emerald-400'
+                          : 'text-red-600 dark:text-red-400'
+                    }`}
+                  >
+                    {u == null ? '—' : `${u >= 0 ? '+' : ''}${(u * 100).toFixed(1)}%`}
+                  </td>
+                )}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {!multi && (
+        <div className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-500">
+          100% rollout — no control group to compare against.
+        </div>
+      )}
     </div>
   );
 }
@@ -378,33 +442,37 @@ export default async function PageDeepDivePage({
             <div className="mb-2 text-sm font-medium text-amber-800 dark:text-amber-300">
               Active A/B tests on this page
             </div>
-            <ul className="space-y-2">
+            <ul className="space-y-3">
               {data.activeTests.map((t) => (
-                <li key={t.id} className="flex flex-wrap items-center gap-2 text-sm">
-                  <span className="inline-flex items-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
-                    {igTypeLabel(t.type)}
-                  </span>
-                  <a
-                    href={t.testUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="font-medium text-sky-700 underline decoration-sky-200 underline-offset-2 hover:decoration-sky-500 dark:text-sky-400 dark:decoration-sky-900"
-                  >
-                    {t.name}
-                  </a>
-                  <span className="text-xs text-zinc-500 dark:text-zinc-400">
-                    {t.role === 'origin'
-                      ? 'redirect origin'
-                      : t.role === 'destination'
-                        ? 'redirect destination'
-                        : 'targeted here'}
-                  </span>
+                <li key={t.id} className="border-t border-amber-100 pt-2 first:border-t-0 first:pt-0 dark:border-amber-900/40">
+                  <div className="flex flex-wrap items-center gap-2 text-sm">
+                    <span className="inline-flex items-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+                      {igTypeLabel(t.type)}
+                    </span>
+                    <a
+                      href={t.testUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-medium text-sky-700 underline decoration-sky-200 underline-offset-2 hover:decoration-sky-500 dark:text-sky-400 dark:decoration-sky-900"
+                    >
+                      {t.name}
+                    </a>
+                    <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                      {t.role === 'origin'
+                        ? 'redirect origin'
+                        : t.role === 'destination'
+                          ? 'redirect destination'
+                          : 'targeted here'}
+                    </span>
+                  </div>
+                  {t.results && <TestResults results={t.results} />}
                 </li>
               ))}
             </ul>
             <p className="mt-2 text-[11px] text-zinc-500 dark:text-zinc-500">
-              Live from Intelligems. Template-only tests aren&rsquo;t listed — Intelligems doesn&rsquo;t
-              expose their page path via the API.
+              Live from Intelligems · results are <span className="font-medium">test-level</span>{' '}
+              (cohort-attributed across the whole experiment, not just this page). Template-only tests
+              aren&rsquo;t listed — Intelligems doesn&rsquo;t expose their page path via the API.
             </p>
           </section>
         )}
