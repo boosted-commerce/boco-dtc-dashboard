@@ -469,7 +469,7 @@ export default async function PageDeepDivePage({
                           : 'targeted here'}
                     </span>
                   </div>
-                  {t.redirectsTo.length > 0 && (
+                  {(t.redirectsTo?.length ?? 0) > 0 && (
                     <div className="mt-1 rounded-md bg-amber-100/70 px-2 py-1 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
                       ↪ Visitors to this page are redirected to{' '}
                       {t.redirectsTo.map((dest, i) => (
