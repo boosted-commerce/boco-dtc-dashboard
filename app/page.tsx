@@ -29,7 +29,8 @@ import { getNorthbeamSummary, type NorthbeamSummary } from '@/lib/queries/northb
 import { getNarrative } from '@/lib/queries/narrative';
 import { clarityHeatmapUrl } from '@/lib/clarity';
 import { getClarityMetrics, type ClarityMetricsMap } from '@/lib/clarity-metrics';
-import { findIntelligemsTest } from '@/lib/intelligems-tests';
+import { matchIntelligemsTest, getIntelligemsTests } from '@/lib/intelligems-api';
+import type { IntelligemsTest } from '@/lib/intelligems-tests';
 import { StarButton } from '@/app/_components/star-button';
 import { AddWatchedInput } from '@/app/_components/add-watched-input';
 import { HideButton } from '@/app/_components/hide-button';
@@ -691,6 +692,7 @@ function Layer2Table({
   hideable,
   showSessions,
   showRevenue,
+  igTests,
 }: {
   rows: Layer2Row[];
   metricNoun: 'orders' | 'units' | 'orders attributed';
@@ -702,6 +704,7 @@ function Layer2Table({
   hideable: boolean;
   showSessions: boolean;
   showRevenue: boolean;
+  igTests: IntelligemsTest[];
 }) {
   if (rows.length === 0) {
     return (
@@ -751,7 +754,7 @@ function Layer2Table({
             : r.priorSessions ?? 0;
           const tag = trendTagFor(currentForTrend, priorForTrend);
           const heatmapUrl = starrable ? clarityHeatmapUrl(brand, r.key) : null;
-          const intelligemsMatch = starrable ? findIntelligemsTest(brand, r.key) : null;
+          const intelligemsMatch = starrable ? matchIntelligemsTest(igTests, r.key) : null;
           return (
             <tr
               key={r.key}
@@ -1030,6 +1033,7 @@ export default async function Home({
     promos,
     sparkPromos,
     watchedRowsForNarrative,
+    igTests,
   ] = await Promise.all([
     getStoreOverview(brand, period, source),
     getLayer2(brand, period, tab),
@@ -1049,6 +1053,7 @@ export default async function Home({
     // — gives Claude visibility into the team's curated key URLs.
     // Cached, so re-asking for the watched tab is free.
     tab === 'watched' ? Promise.resolve([] as Layer2Row[]) : getLayer2(brand, period, 'watched').catch(() => [] as Layer2Row[]),
+    getIntelligemsTests(brand).catch(() => [] as IntelligemsTest[]),
   ]);
   // If we're on the watched tab, layer2Rows IS the watched rows — use it.
   const watchedRows = tab === 'watched' ? layer2Rows : watchedRowsForNarrative;
@@ -1340,6 +1345,7 @@ export default async function Home({
               hideable={hideable}
               showSessions={starrableTabs.has(tab) || tab === 'attribution'}
               showRevenue={tab !== 'attribution'}
+              igTests={igTests}
             />
           </div>
           {layer2Rows.length > COLLAPSED_ROWS && (
