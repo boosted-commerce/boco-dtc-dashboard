@@ -78,11 +78,13 @@ export function verifySession(token: string | undefined): Session | null {
   }
 }
 
-// Constant-time string compare for the shared passcode.
+// Constant-time string compare for the shared passcode. Both sides are
+// trimmed so a stray trailing newline/space pasted into the env var (a
+// common gotcha) doesn't cause a spurious mismatch.
 export function passcodeMatches(input: string): boolean {
-  const expected = process.env.DASHBOARD_PASSCODE;
+  const expected = process.env.DASHBOARD_PASSCODE?.trim();
   if (!expected) return false;
-  const a = Buffer.from(input);
+  const a = Buffer.from(input.trim());
   const b = Buffer.from(expected);
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }

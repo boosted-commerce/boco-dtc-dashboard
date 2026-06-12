@@ -7,7 +7,8 @@ import {
 } from '@/lib/shopify';
 import { getClarityMetrics, type ClarityPageMetrics } from '@/lib/clarity-metrics';
 import { getActivePromos } from '@/lib/queries/promos';
-import { findIntelligemsTest, type IntelligemsTest } from '@/lib/intelligems-tests';
+import { type IntelligemsTest } from '@/lib/intelligems-tests';
+import { getIntelligemsTests, matchIntelligemsTest } from '@/lib/intelligems-api';
 import type { Brand, Period } from '@/lib/queries/orders';
 import type { Promo } from '@/lib/queries/promos';
 
@@ -135,6 +136,7 @@ async function getPageDeepDiveUncached(
     clarityMap,
     activePromos,
     orders,
+    igTests,
   ] = await Promise.all([
     getSessionsByPath(brand, period).catch(() => new Map()),
     getSourceByPath(brand, path, period).catch(() => [] as SourceBreakdownRow[]),
@@ -150,6 +152,7 @@ async function getPageDeepDiveUncached(
       dbeforeCount: 0,
       dbeforeRev: 0,
     })),
+    getIntelligemsTests(brand).catch(() => [] as IntelligemsTest[]),
   ]);
 
   // ShopifyQL session metrics for this path. The prior-period numbers
@@ -172,6 +175,6 @@ async function getPageDeepDiveUncached(
     sourceBreakdown,
     clarity: clarityMap.get(path) ?? null,
     activePromos,
-    intelligemsTest: findIntelligemsTest(brand, path),
+    intelligemsTest: matchIntelligemsTest(igTests, path),
   };
 }
