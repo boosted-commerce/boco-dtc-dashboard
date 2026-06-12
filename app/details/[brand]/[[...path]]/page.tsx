@@ -373,7 +373,7 @@ export default async function PageDeepDivePage({
         )}
 
         {/* Active A/B tests located to this page (live from Intelligems) */}
-        {data.activeTests.length > 0 && (
+        {(data.activeTests?.length ?? 0) > 0 && (
           <section className="mb-6 rounded-lg border border-amber-200 bg-amber-50/40 px-5 py-4 dark:border-amber-900/60 dark:bg-amber-950/10">
             <div className="mb-2 text-sm font-medium text-amber-800 dark:text-amber-300">
               Active A/B tests on this page
