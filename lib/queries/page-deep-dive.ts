@@ -8,7 +8,7 @@ import {
 import { getClarityMetrics, type ClarityPageMetrics } from '@/lib/clarity-metrics';
 import { getActivePromos } from '@/lib/queries/promos';
 import { type IntelligemsTest } from '@/lib/intelligems-tests';
-import { getIntelligemsTests, matchIntelligemsTest } from '@/lib/intelligems-api';
+import { getActiveTests, matchActiveTestsForPath, type ActiveTest } from '@/lib/intelligems-api';
 import type { Brand, Period } from '@/lib/queries/orders';
 import type { Promo } from '@/lib/queries/promos';
 
@@ -40,9 +40,18 @@ export type PageDeepDive = {
   // Brand-level promos active during this window (not filtered to URL —
   // the page might be touched by a sitewide promo)
   activePromos: Promo[];
-  // If this path is part of a current Intelligems test, surface the
-  // role + test deep link
+  // If this path is the origin/destination of a redirect (split-URL)
+  // test, surface the role + test deep link (drives the header pill).
   intelligemsTest: { test: IntelligemsTest; role: 'origin' | 'destination' } | null;
+  // All active Intelligems tests located to this page (redirect tests +
+  // on-site edits targeting this URL) — for the deep-dive section.
+  activeTests: {
+    id: string;
+    name: string;
+    type: string;
+    testUrl: string;
+    role: 'origin' | 'destination' | 'targeted';
+  }[];
 };
 
 type OrdersRow = {
@@ -136,7 +145,7 @@ async function getPageDeepDiveUncached(
     clarityMap,
     activePromos,
     orders,
-    igTests,
+    igActive,
   ] = await Promise.all([
     getSessionsByPath(brand, period).catch(() => new Map()),
     getSourceByPath(brand, path, period).catch(() => [] as SourceBreakdownRow[]),
@@ -152,7 +161,7 @@ async function getPageDeepDiveUncached(
       dbeforeCount: 0,
       dbeforeRev: 0,
     })),
-    getIntelligemsTests(brand).catch(() => [] as IntelligemsTest[]),
+    getActiveTests(brand).catch(() => [] as ActiveTest[]),
   ]);
 
   // ShopifyQL session metrics for this path. The prior-period numbers
@@ -160,6 +169,39 @@ async function getPageDeepDiveUncached(
   // sessions will read as "new" but vs-prior on orders/revenue works.
   // (Could extend with a second ShopifyQL call later if useful.)
   const sess = sessionsByPath.get(path);
+
+  // Intelligems tests located to this page. The redirect (origin/dest)
+  // match drives the header pill; the full list (incl. on-site edits
+  // targeting this URL) feeds the deep-dive "Active A/B tests" section.
+  const onPage = matchActiveTestsForPath(igActive, path);
+  const redirectMatch = onPage.find(
+    (t) => t.origins.includes(path) || t.destinations.includes(path),
+  );
+  const intelligemsTest = redirectMatch
+    ? {
+        test: {
+          name: redirectMatch.name,
+          testUrl: redirectMatch.testUrl,
+          origins: redirectMatch.origins,
+          destinations: redirectMatch.destinations,
+        } as IntelligemsTest,
+        role: (redirectMatch.origins.includes(path) ? 'origin' : 'destination') as
+          | 'origin'
+          | 'destination',
+      }
+    : null;
+  const activeTests = onPage.map((t) => ({
+    id: t.id,
+    name: t.name,
+    type: t.type,
+    testUrl: t.testUrl,
+    role: (t.origins.includes(path)
+      ? 'origin'
+      : t.destinations.includes(path)
+        ? 'destination'
+        : 'targeted') as 'origin' | 'destination' | 'targeted',
+  }));
+
   return {
     brand,
     path,
@@ -175,6 +217,7 @@ async function getPageDeepDiveUncached(
     sourceBreakdown,
     clarity: clarityMap.get(path) ?? null,
     activePromos,
-    intelligemsTest: matchIntelligemsTest(igTests, path),
+    intelligemsTest,
+    activeTests,
   };
 }
