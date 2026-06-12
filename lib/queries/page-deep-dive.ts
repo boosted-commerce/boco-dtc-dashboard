@@ -127,8 +127,10 @@ export async function getPageDeepDive(
   path: string,
   period: Period,
 ): Promise<PageDeepDive> {
+  // Bump the version when the PageDeepDive shape changes so stale cached
+  // objects (missing newer fields like activeTests) can't be served.
   return withCache(
-    `deepdive:${brand}:${period}:${encodeURIComponent(path)}:v1`,
+    `deepdive:${brand}:${period}:${encodeURIComponent(path)}:v3`,
     120,
     () => getPageDeepDiveUncached(brand, path, period),
   );
