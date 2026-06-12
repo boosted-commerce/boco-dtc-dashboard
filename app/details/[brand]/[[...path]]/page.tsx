@@ -486,6 +486,23 @@ export default async function PageDeepDivePage({
                       — that&rsquo;s where customers actually land, so this page&rsquo;s own metrics read low.
                     </div>
                   )}
+                  {(t.redirectedFrom?.length ?? 0) > 0 && (
+                    <div className="mt-1 rounded-md bg-amber-100/70 px-2 py-1 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                      ↩ This page receives redirected traffic from{' '}
+                      {t.redirectedFrom.map((src, i) => (
+                        <span key={src}>
+                          {i > 0 && ', '}
+                          <Link
+                            href={`/details/${brand}${src === '/' ? '' : src}?period=${period}`}
+                            className="font-medium underline decoration-amber-300 underline-offset-2 hover:decoration-amber-500"
+                          >
+                            {src}
+                          </Link>
+                        </span>
+                      ))}{' '}
+                      — visitors who land there are sent here, so this page absorbs their traffic.
+                    </div>
+                  )}
                   {t.results && <TestResults results={t.results} />}
                 </li>
               ))}

@@ -61,6 +61,8 @@ export type PageDeepDive = {
     results: ExperienceResults | null;
     // When this page is a redirect origin, where its traffic is sent.
     redirectsTo: string[];
+    // When this page is a redirect destination, which pages funnel here.
+    redirectedFrom: string[];
   }[];
 };
 
@@ -140,7 +142,7 @@ export async function getPageDeepDive(
   // Bump the version when the PageDeepDive shape changes so stale cached
   // objects (missing newer fields like activeTests) can't be served.
   return withCache(
-    `deepdive:${brand}:${period}:${encodeURIComponent(path)}:v4`,
+    `deepdive:${brand}:${period}:${encodeURIComponent(path)}:v5`,
     120,
     () => getPageDeepDiveUncached(brand, path, period),
   );
@@ -217,6 +219,9 @@ async function getPageDeepDiveUncached(
       redirectsTo: t.redirects
         .filter((r) => r.origin === path)
         .map((r) => r.destination),
+      redirectedFrom: t.redirects
+        .filter((r) => r.destination === path)
+        .map((r) => r.origin),
     })),
   );
 
