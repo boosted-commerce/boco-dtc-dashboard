@@ -96,6 +96,11 @@ export type StoreOverview = {
     orders: number | null;
     revenue: number | null;
     aov: number | null;
+    // Subscription split (auto-detected from Recharge order signals).
+    subscriptionRevenue: number | null;
+    recurringRevenue: number | null;
+    newSubscriptions: number | null;
+    subscriptionShare: number | null; // percent of today's revenue
   } | null;
 };
 
@@ -514,6 +519,13 @@ async function getStoreOverviewUncached(
           aov:
             todayOrders && todayOrders.orders > 0
               ? todayOrders.revenue / todayOrders.orders
+              : null,
+          subscriptionRevenue: todayOrders?.subRevenue ?? null,
+          recurringRevenue: todayOrders?.recurringRevenue ?? null,
+          newSubscriptions: todayOrders?.newSubOrders ?? null,
+          subscriptionShare:
+            todayOrders && todayOrders.revenue > 0
+              ? (todayOrders.subRevenue / todayOrders.revenue) * 100
               : null,
         }
       : null;

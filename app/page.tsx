@@ -171,13 +171,22 @@ function SubMetricCard({
   kind,
   sparklineColor = 'text-zinc-700 dark:text-zinc-300',
   markers,
+  today,
 }: {
   title: string;
   bucket: SubBucket;
   kind: Format;
   sparklineColor?: string;
   markers?: SparklineMarker[];
+  today?: number | null;
 }) {
+  // SubBucket has no sevenDayTotal — derive a 7-day baseline from the
+  // tail of the daily series. For rate metrics (percent) average the
+  // daily values; for counts/currency average per day too.
+  const last7 = bucket.daily.slice(-7);
+  const sevenDayBaseline =
+    last7.length > 0 ? last7.reduce((s, p) => s + p.value, 0) / last7.length : 0;
+
   return (
     <div className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
       <div className="flex items-baseline justify-between">
@@ -192,6 +201,17 @@ function SubMetricCard({
       <div className="mt-1">
         <ChangeChip current={bucket.current} prior={bucket.prior} label="vs prior period" />
       </div>
+      {today != null && (
+        <div
+          className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1"
+          title="Live from Shopify Orders · subscription orders auto-detected (Recharge)"
+        >
+          <span className="rounded bg-sky-50 px-1.5 py-0.5 text-xs font-semibold text-sky-700 dark:bg-sky-950/40 dark:text-sky-300">
+            Today {fmt(today, kind)}
+          </span>
+          <ChangeChip current={today} prior={sevenDayBaseline} label="vs 7-day avg" />
+        </div>
+      )}
       <div className={`mt-3 ${sparklineColor}`}>
         <Sparkline points={bucket.daily} kind={kind} markers={markers} />
       </div>
@@ -1255,6 +1275,7 @@ export default async function Home({
             kind="percent"
             sparklineColor="text-purple-600 dark:text-purple-400"
             markers={sparkMarkers}
+            today={data.today?.subscriptionShare}
           />
         </section>
 
@@ -1266,6 +1287,7 @@ export default async function Home({
             kind="currency"
             sparklineColor="text-purple-600 dark:text-purple-400"
             markers={sparkMarkers}
+            today={data.today?.subscriptionRevenue}
           />
           <MetricCard
             title="Recurring Revenue"
@@ -1273,6 +1295,7 @@ export default async function Home({
             kind="currency"
             sparklineColor="text-purple-600 dark:text-purple-400"
             markers={sparkMarkers}
+            today={data.today?.recurringRevenue}
           />
           <SubMetricCard
             title="New Subscriptions"
@@ -1280,6 +1303,7 @@ export default async function Home({
             kind="count"
             sparklineColor="text-purple-600 dark:text-purple-400"
             markers={sparkMarkers}
+            today={data.today?.newSubscriptions}
           />
         </section>
 

@@ -130,16 +130,59 @@ async function shopStartOfTodayIso(brand: Brand): Promise<string> {
   }
 }
 
-export type TodayOrders = { orders: number; revenue: number };
+export type TodayOrders = {
+  orders: number;
+  revenue: number;
+  // Subscription split, auto-detected from Recharge signals (app/tags/
+  // sourceName). Best-effort — verify via /api/debug/today.
+  subOrders: number;
+  subRevenue: number;
+  recurringOrders: number;
+  recurringRevenue: number;
+  newSubOrders: number;
+  newSubRevenue: number;
+};
+
+type RawOrderNode = {
+  test?: boolean;
+  tags?: string[] | null;
+  sourceName?: string | null;
+  app?: { name?: string | null } | null;
+  currentTotalPriceSet?: { shopMoney?: { amount?: string } } | null;
+};
+
+// Classify an order's subscription status from Recharge signals.
+function classifyOrder(o: RawOrderNode): { isSub: boolean; isRecurring: boolean } {
+  const tags = (o.tags ?? []).join(' ').toLowerCase();
+  const app = (o.app?.name ?? '').toLowerCase();
+  const src = (o.sourceName ?? '').toLowerCase();
+  const isSub =
+    app.includes('recharge') ||
+    tags.includes('subscription') ||
+    src.includes('subscription');
+  // Recurring (renewal) vs first/new sign-up.
+  const isRecurring = isSub && (tags.includes('recurring') || tags.includes('renewal'));
+  return { isSub, isRecurring };
+}
+
+const ORDER_FIELDS = `test sourceName tags app{ name } currentTotalPriceSet{ shopMoney{ amount } }`;
 
 // Today's non-test orders + revenue (all channels), live from the Orders
-// API. Paginates (capped) and sums current order totals.
+// API, with an auto-detected subscription split. Paginates (capped).
 export async function getTodayOrders(brand: Brand): Promise<TodayOrders | null> {
   const startIso = await shopStartOfTodayIso(brand);
   const q = `created_at:>='${startIso}'`;
   let cursor: string | null = null;
-  let orders = 0;
-  let revenue = 0;
+  const t: TodayOrders = {
+    orders: 0,
+    revenue: 0,
+    subOrders: 0,
+    subRevenue: 0,
+    recurringOrders: 0,
+    recurringRevenue: 0,
+    newSubOrders: 0,
+    newSubRevenue: 0,
+  };
   let pages = 0;
   let any = false;
   do {
@@ -148,28 +191,62 @@ export async function getTodayOrders(brand: Brand): Promise<TodayOrders | null> 
       `query($q:String!,$cursor:String){
         orders(first:250, after:$cursor, query:$q, sortKey:CREATED_AT){
           pageInfo{ hasNextPage endCursor }
-          nodes{ test currentTotalPriceSet{ shopMoney{ amount } } }
+          nodes{ ${ORDER_FIELDS} }
         }
       }`,
       { q, cursor },
     );
     const conn = data?.orders as
-      | {
-          pageInfo?: { hasNextPage?: boolean; endCursor?: string };
-          nodes?: Array<{ test?: boolean; currentTotalPriceSet?: { shopMoney?: { amount?: string } } }>;
-        }
+      | { pageInfo?: { hasNextPage?: boolean; endCursor?: string }; nodes?: RawOrderNode[] }
       | undefined;
     if (!conn) break;
     any = true;
     for (const o of conn.nodes ?? []) {
       if (o.test) continue;
-      orders += 1;
-      revenue += Number(o.currentTotalPriceSet?.shopMoney?.amount ?? 0) || 0;
+      const amt = Number(o.currentTotalPriceSet?.shopMoney?.amount ?? 0) || 0;
+      t.orders += 1;
+      t.revenue += amt;
+      const { isSub, isRecurring } = classifyOrder(o);
+      if (isSub) {
+        t.subOrders += 1;
+        t.subRevenue += amt;
+        if (isRecurring) {
+          t.recurringOrders += 1;
+          t.recurringRevenue += amt;
+        } else {
+          t.newSubOrders += 1;
+          t.newSubRevenue += amt;
+        }
+      }
     }
     cursor = conn.pageInfo?.hasNextPage ? conn.pageInfo.endCursor ?? null : null;
     pages += 1;
   } while (cursor && pages < 12);
-  return any ? { orders, revenue } : null;
+  return any ? t : null;
+}
+
+// Sample of today's orders with their raw subscription signals — for the
+// debug route to verify auto-detection against real data.
+export async function getTodayOrdersSample(
+  brand: Brand,
+): Promise<Array<{ tags: string[]; app: string; sourceName: string; isSub: boolean; isRecurring: boolean }>> {
+  const startIso = await shopStartOfTodayIso(brand);
+  const data = await runAdminGraphQL(
+    brand,
+    `query($q:String!){ orders(first:25, query:$q, sortKey:CREATED_AT, reverse:true){ nodes{ ${ORDER_FIELDS} } } }`,
+    { q: `created_at:>='${startIso}'` },
+  );
+  const nodes = (data?.orders as { nodes?: RawOrderNode[] } | undefined)?.nodes ?? [];
+  return nodes.map((o) => {
+    const c = classifyOrder(o);
+    return {
+      tags: o.tags ?? [],
+      app: o.app?.name ?? '',
+      sourceName: o.sourceName ?? '',
+      isSub: c.isSub,
+      isRecurring: c.isRecurring,
+    };
+  });
 }
 
 export type TodaySessions = { sessions: number; convRate: number };
