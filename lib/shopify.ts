@@ -62,6 +62,131 @@ async function runShopifyQL(brand: Brand, query: string): Promise<TableData | nu
   }
 }
 
+// --- Live "today so far" figures -------------------------------------
+// Orders/revenue come from the Orders API (real-time, read_orders scope).
+// Sessions/conv come from ShopifyQL (day-grained, lags a few hours). All
+// best-effort: null on missing creds / API error.
+
+// Generic Admin GraphQL call (mirrors runShopifyQL's auth).
+async function runAdminGraphQL(
+  brand: Brand,
+  query: string,
+  variables?: Record<string, unknown>,
+): Promise<Record<string, unknown> | null> {
+  const creds = await getShopifyCredentials(brand);
+  if (!creds) return null;
+  try {
+    const res = await fetch(
+      `https://${creds.shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'X-Shopify-Access-Token': creds.token,
+        },
+        body: JSON.stringify({ query, variables: variables ?? {} }),
+        cache: 'no-store',
+      },
+    );
+    if (!res.ok) {
+      console.error(`Shopify Admin GQL ${brand} HTTP ${res.status}`);
+      return null;
+    }
+    const json = (await res.json()) as { data?: Record<string, unknown>; errors?: unknown };
+    if (json.errors) {
+      console.error(`Shopify Admin GQL ${brand} errors:`, json.errors);
+      return null;
+    }
+    return json.data ?? null;
+  } catch (err) {
+    console.error(`Shopify Admin GQL ${brand} threw:`, err);
+    return null;
+  }
+}
+
+// Start-of-today in the shop's timezone as an ISO string with offset
+// (e.g. "2026-06-14T00:00:00-07:00") for the Orders created_at filter.
+async function shopStartOfTodayIso(brand: Brand): Promise<string> {
+  const now = new Date();
+  let tz = 'UTC';
+  const data = await runAdminGraphQL(brand, `query { shop { ianaTimezone } }`);
+  const shop = data?.shop as { ianaTimezone?: string } | undefined;
+  if (shop?.ianaTimezone) tz = shop.ianaTimezone;
+  try {
+    const date = new Intl.DateTimeFormat('en-CA', {
+      timeZone: tz,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(now); // YYYY-MM-DD in the shop's tz
+    const tzName =
+      new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'longOffset' })
+        .formatToParts(now)
+        .find((p) => p.type === 'timeZoneName')?.value ?? 'GMT+00:00';
+    const offset = tzName.replace('GMT', '') || '+00:00';
+    return `${date}T00:00:00${offset}`;
+  } catch {
+    return `${now.toISOString().slice(0, 10)}T00:00:00+00:00`;
+  }
+}
+
+export type TodayOrders = { orders: number; revenue: number };
+
+// Today's non-test orders + revenue (all channels), live from the Orders
+// API. Paginates (capped) and sums current order totals.
+export async function getTodayOrders(brand: Brand): Promise<TodayOrders | null> {
+  const startIso = await shopStartOfTodayIso(brand);
+  const q = `created_at:>='${startIso}'`;
+  let cursor: string | null = null;
+  let orders = 0;
+  let revenue = 0;
+  let pages = 0;
+  let any = false;
+  do {
+    const data: Record<string, unknown> | null = await runAdminGraphQL(
+      brand,
+      `query($q:String!,$cursor:String){
+        orders(first:250, after:$cursor, query:$q, sortKey:CREATED_AT){
+          pageInfo{ hasNextPage endCursor }
+          nodes{ test currentTotalPriceSet{ shopMoney{ amount } } }
+        }
+      }`,
+      { q, cursor },
+    );
+    const conn = data?.orders as
+      | {
+          pageInfo?: { hasNextPage?: boolean; endCursor?: string };
+          nodes?: Array<{ test?: boolean; currentTotalPriceSet?: { shopMoney?: { amount?: string } } }>;
+        }
+      | undefined;
+    if (!conn) break;
+    any = true;
+    for (const o of conn.nodes ?? []) {
+      if (o.test) continue;
+      orders += 1;
+      revenue += Number(o.currentTotalPriceSet?.shopMoney?.amount ?? 0) || 0;
+    }
+    cursor = conn.pageInfo?.hasNextPage ? conn.pageInfo.endCursor ?? null : null;
+    pages += 1;
+  } while (cursor && pages < 12);
+  return any ? { orders, revenue } : null;
+}
+
+export type TodaySessions = { sessions: number; convRate: number };
+
+// Today's sessions + conversion rate from ShopifyQL (may lag a few hours).
+export async function getTodaySessions(brand: Brand): Promise<TodaySessions | null> {
+  const table = await runShopifyQL(
+    brand,
+    `FROM sessions SHOW sessions, conversion_rate DURING today`,
+  );
+  const row = table?.rows?.[0];
+  if (!row) return null;
+  const sessions = Number(row.sessions) || 0;
+  const convRate = (Number(row.conversion_rate) || 0) * 100;
+  return { sessions, convRate };
+}
+
 // Strip protocol + host + query string + fragment so a ShopifyQL
 // landing_page_url ("https://www.asterwood.co/products/foo?srsltid=...")
 // reduces to the Snowflake-style path ("/products/foo") that the rest of
