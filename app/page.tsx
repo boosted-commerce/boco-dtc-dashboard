@@ -145,12 +145,13 @@ function MetricCard({
       {today != null && (
         <div
           className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1"
-          title="Live from Shopify · all channels · sessions & conversion may lag a few hours"
+          title={`Live from Shopify · all channels · 7-day avg/day = ${fmt(sevenDayBaseline, kind)} · sessions & conversion may lag a few hours`}
         >
           <span className="rounded bg-sky-50 px-1.5 py-0.5 text-xs font-semibold text-sky-700 dark:bg-sky-950/40 dark:text-sky-300">
             Today {fmt(today, kind)}
           </span>
           <ChangeChip current={today} prior={sevenDayBaseline} label="vs 7-day avg" />
+          <span className="text-xs text-zinc-400 dark:text-zinc-500">({fmt(sevenDayBaseline, kind)})</span>
         </div>
       )}
       <div className={`mt-3 ${sparklineColor}`}>
@@ -1275,7 +1276,6 @@ export default async function Home({
             kind="percent"
             sparklineColor="text-purple-600 dark:text-purple-400"
             markers={sparkMarkers}
-            today={data.today?.subscriptionShare}
           />
         </section>
 
@@ -1287,7 +1287,6 @@ export default async function Home({
             kind="currency"
             sparklineColor="text-purple-600 dark:text-purple-400"
             markers={sparkMarkers}
-            today={data.today?.subscriptionRevenue}
           />
           <MetricCard
             title="Recurring Revenue"
@@ -1295,7 +1294,6 @@ export default async function Home({
             kind="currency"
             sparklineColor="text-purple-600 dark:text-purple-400"
             markers={sparkMarkers}
-            today={data.today?.recurringRevenue}
           />
           <SubMetricCard
             title="New Subscriptions"
@@ -1303,7 +1301,6 @@ export default async function Home({
             kind="count"
             sparklineColor="text-purple-600 dark:text-purple-400"
             markers={sparkMarkers}
-            today={data.today?.newSubscriptions}
           />
         </section>
 
