@@ -37,6 +37,8 @@ export type PageDeepDive = {
   // doesn't give a clean per-page daily series for sessions/conv.
   orderBucket: Bucket;
   revenueBucket: Bucket;
+  // Subscription revenue landed on this page (web subscription orders).
+  subRevenueBucket: Bucket;
   // Most recent two complete days (orders + revenue), so the AI summary
   // can lead with day-over-day movement and consecutive daily snapshots
   // read as a timeline rather than near-duplicate trailing-window text.
@@ -150,8 +152,18 @@ type PageAggRow = {
   REVENUE_7D: number | string | null;
   ORDERS_YEAR_AGO: number | string | null;
   REVENUE_YEAR_AGO: number | string | null;
+  SUBREV_CURRENT: number | string | null;
+  SUBREV_PRIOR: number | string | null;
+  SUBREV_YESTERDAY: number | string | null;
+  SUBREV_7D: number | string | null;
+  SUBREV_YEAR_AGO: number | string | null;
 };
-type PageDailyRow = { D: string; ORDERS: number | string | null; REVENUE: number | string | null };
+type PageDailyRow = {
+  D: string;
+  ORDERS: number | string | null;
+  REVENUE: number | string | null;
+  SUB_REV: number | string | null;
+};
 
 // Full per-page orders + revenue buckets (mirrors the brand-level
 // getShopifyAggregates/getShopifyDaily windows, filtered to one landing
@@ -160,13 +172,15 @@ async function getPageBuckets(
   brand: Brand,
   path: string,
   period: Period,
-): Promise<{ orders: Bucket; revenue: Bucket }> {
+): Promise<{ orders: Bucket; revenue: Bucket; subRevenue: Bucket }> {
   const pathFilter = `REGEXP_REPLACE(SPLIT_PART(LANDING_SITE, '?', 1), '(^https?://[^/]+)|/$', '') = ?`;
+  // Web subscription revenue, matching the brand-level definition.
+  const subAmt = `IFF(c.IS_SUBSCRIPTION = TRUE AND c.SOURCE_NAME = 'web', c.TOTAL_PRICE_AMOUNT, 0)`;
   const [aggRows, dailyRows] = await Promise.all([
     execute<PageAggRow>(
       `
         WITH classified AS (
-          SELECT CREATED_AT, TOTAL_PRICE_AMOUNT
+          SELECT CREATED_AT, TOTAL_PRICE_AMOUNT, IS_SUBSCRIPTION, SOURCE_NAME
           FROM DW_ANALYTICS.FACT.SHOPIFY_ORDERS_RD_ORDERS
           WHERE BRAND = ?
             AND (IS_FAIRE_ORDER = FALSE OR IS_FAIRE_ORDER IS NULL)
@@ -194,7 +208,12 @@ async function getPageBuckets(
           COUNT_IF(c.CREATED_AT >= b.seven_day_start AND c.CREATED_AT < b.today_start) AS ORDERS_7D,
           COALESCE(SUM(IFF(c.CREATED_AT >= b.seven_day_start AND c.CREATED_AT < b.today_start, c.TOTAL_PRICE_AMOUNT, 0)), 0) AS REVENUE_7D,
           COUNT_IF(c.CREATED_AT >= b.year_ago_start AND c.CREATED_AT < b.year_ago_end) AS ORDERS_YEAR_AGO,
-          COALESCE(SUM(IFF(c.CREATED_AT >= b.year_ago_start AND c.CREATED_AT < b.year_ago_end, c.TOTAL_PRICE_AMOUNT, 0)), 0) AS REVENUE_YEAR_AGO
+          COALESCE(SUM(IFF(c.CREATED_AT >= b.year_ago_start AND c.CREATED_AT < b.year_ago_end, c.TOTAL_PRICE_AMOUNT, 0)), 0) AS REVENUE_YEAR_AGO,
+          COALESCE(SUM(IFF(c.CREATED_AT >= b.current_start AND c.CREATED_AT < b.today_start, ${subAmt}, 0)), 0) AS SUBREV_CURRENT,
+          COALESCE(SUM(IFF(c.CREATED_AT >= b.prior_start AND c.CREATED_AT < b.current_start, ${subAmt}, 0)), 0) AS SUBREV_PRIOR,
+          COALESCE(SUM(IFF(c.CREATED_AT >= b.yesterday_start AND c.CREATED_AT < b.today_start, ${subAmt}, 0)), 0) AS SUBREV_YESTERDAY,
+          COALESCE(SUM(IFF(c.CREATED_AT >= b.seven_day_start AND c.CREATED_AT < b.today_start, ${subAmt}, 0)), 0) AS SUBREV_7D,
+          COALESCE(SUM(IFF(c.CREATED_AT >= b.year_ago_start AND c.CREATED_AT < b.year_ago_end, ${subAmt}, 0)), 0) AS SUBREV_YEAR_AGO
         FROM classified c, bounds b
       `,
       [brand, 365 + period, path, period, period * 2, 365 + period],
@@ -204,7 +223,8 @@ async function getPageBuckets(
         SELECT
           TO_VARCHAR(DATE(CREATED_AT), 'YYYY-MM-DD') AS D,
           COUNT(*) AS ORDERS,
-          COALESCE(SUM(TOTAL_PRICE_AMOUNT), 0) AS REVENUE
+          COALESCE(SUM(TOTAL_PRICE_AMOUNT), 0) AS REVENUE,
+          COALESCE(SUM(IFF(IS_SUBSCRIPTION = TRUE AND SOURCE_NAME = 'web', TOTAL_PRICE_AMOUNT, 0)), 0) AS SUB_REV
         FROM DW_ANALYTICS.FACT.SHOPIFY_ORDERS_RD_ORDERS
         WHERE BRAND = ?
           AND CREATED_AT >= DATEADD(day, -?, DATE_TRUNC('day', CURRENT_TIMESTAMP()))
@@ -220,6 +240,7 @@ async function getPageBuckets(
   const a = aggRows[0] ?? ({} as PageAggRow);
   const ordersDaily: DailyPoint[] = dailyRows.map((d) => ({ date: d.D, value: n(d.ORDERS) }));
   const revenueDaily: DailyPoint[] = dailyRows.map((d) => ({ date: d.D, value: n(d.REVENUE) }));
+  const subRevDaily: DailyPoint[] = dailyRows.map((d) => ({ date: d.D, value: n(d.SUB_REV) }));
   return {
     orders: {
       current: n(a.ORDERS_CURRENT),
@@ -237,6 +258,14 @@ async function getPageBuckets(
       yearAgo: n(a.REVENUE_YEAR_AGO),
       daily: revenueDaily,
     },
+    subRevenue: {
+      current: n(a.SUBREV_CURRENT),
+      prior: n(a.SUBREV_PRIOR),
+      yesterday: n(a.SUBREV_YESTERDAY),
+      sevenDayTotal: n(a.SUBREV_7D),
+      yearAgo: n(a.SUBREV_YEAR_AGO),
+      daily: subRevDaily,
+    },
   };
 }
 
@@ -248,7 +277,7 @@ export async function getPageDeepDive(
   // Bump the version when the PageDeepDive shape changes so stale cached
   // objects (missing newer fields like activeTests) can't be served.
   return withCache(
-    `deepdive:${brand}:${period}:${encodeURIComponent(path)}:v6`,
+    `deepdive:${brand}:${period}:${encodeURIComponent(path)}:v7`,
     120,
     () => getPageDeepDiveUncached(brand, path, period),
   );
@@ -294,6 +323,7 @@ async function getPageDeepDiveUncached(
     getPageBuckets(brand, path, period).catch(() => ({
       orders: emptyBucket,
       revenue: emptyBucket,
+      subRevenue: emptyBucket,
     })),
   ]);
 
@@ -354,6 +384,7 @@ async function getPageDeepDiveUncached(
     revenue: { current: orders.currentRev, prior: orders.priorRev },
     orderBucket: buckets.orders,
     revenueBucket: buckets.revenue,
+    subRevenueBucket: buckets.subRevenue,
     recentDays: {
       yesterday: { orders: orders.ydayCount, revenue: orders.ydayRev },
       dayBefore: { orders: orders.dbeforeCount, revenue: orders.dbeforeRev },
