@@ -319,6 +319,16 @@ export async function getPageNarrative(args: {
   } | null;
   activePromos: Promo[];
   intelligemsRole: 'origin' | 'destination' | null;
+  // Active Intelligems tests on this page — including redirect direction,
+  // so the AI understands a redirect-origin page's low metrics are by
+  // design (traffic redirects away), not underperformance.
+  intelligemsTests?: Array<{
+    name: string;
+    type: string;
+    role: 'origin' | 'destination' | 'targeted';
+    redirectsTo?: string[];
+    redirectedFrom?: string[];
+  }>;
   // Team notes left on this page — fed in as authoritative context so
   // the analysis revises in light of them (e.g. a known redirect bug).
   comments?: PageComment[];
@@ -375,6 +385,23 @@ export async function getPageNarrative(args: {
     ? `This URL is currently the ${args.intelligemsRole} of an active Intelligems A/B test.`
     : '';
 
+  // Detailed A/B context — especially redirect direction, which dictates
+  // whether low page metrics are expected.
+  const igLines = (args.intelligemsTests ?? [])
+    .map((t) => {
+      if (t.role === 'origin' && t.redirectsTo?.length) {
+        return `  - "${t.name}" (${t.type}): this page is the REDIRECT ORIGIN — ~all visitors are redirected to ${t.redirectsTo.join(', ')}. Its own sessions/orders/revenue therefore read very LOW BY DESIGN; this is NOT underperformance. The real activity is on the destination page.`;
+      }
+      if (t.role === 'destination' && t.redirectedFrom?.length) {
+        return `  - "${t.name}" (${t.type}): this page is a REDIRECT DESTINATION — it absorbs traffic redirected from ${t.redirectedFrom.join(', ')}, which can inflate its numbers vs. its own organic discovery.`;
+      }
+      return `  - "${t.name}" (${t.type}): an active on-site test is running on this page, which can affect its metrics.`;
+    })
+    .join('\n');
+  const intelligemsBlock = igLines
+    ? `\nINTELLIGEMS A/B TESTS ON THIS PAGE (factor these into your read):\n${igLines}\n`
+    : '';
+
   // Most-recent-day movement, so consecutive daily summaries differ
   // (the trailing window barely moves day-to-day on slow pages).
   const recentDaysBlock = args.recentDays
@@ -412,7 +439,7 @@ ${clarityLines}
 
 ACTIVE PROMOS (brand-level — may or may not affect this page):
 ${promoLines || 'No active promos.'}
-${teamNotesBlock}
+${intelligemsBlock}${teamNotesBlock}
 INSTRUCTIONS:
 Do NOT output a title, heading, or any markdown (no "#", "*", or bullet points) — start directly with the analysis as plain prose.
 
@@ -420,6 +447,8 @@ Write 3-6 sentences (max 140 words total) that:
 1. Lead with the most recent day-over-day movement when it's notable (yesterday vs the day before), then place it in the context of the trailing window. If yesterday is materially unchanged from the day before, say so in one line rather than repeating prior detail — so each day's summary reads as a fresh timeline entry, not a duplicate
 2. Attribute it to a specific cause grounded in the data: a device/source segment ("conversion has fallen to 0.4% on mobile from Meta"), a Clarity signal ("12 rage-click sessions concentrated on this URL"), an active promo (if relevant), or the Intelligems test if this page is in one
 3. Call out one thing worth attention — a specific friction point, a segment opportunity, or a divergence
+
+CRITICAL — Intelligems redirects: if this page is a REDIRECT ORIGIN, do NOT describe its low sessions/orders/conversion as underperformance or a drop. Explain that the numbers are low because traffic is being redirected to the destination page (name it), and point the reader there for real performance. If it's a REDIRECT DESTINATION, note its numbers are boosted by redirected traffic. Always reconcile the metrics with any active test before drawing conclusions.
 
 Engage with any team notes critically rather than restating them: validate each against the data — confirm it, refine it, or respectfully disagree with specific reasons. Answer any question a note poses directly from the data. Where the data supports it, finish with your own concrete conclusion or suggestion rather than echoing the note.
 

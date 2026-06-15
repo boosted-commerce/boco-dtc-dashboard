@@ -51,6 +51,7 @@ export async function POST(request: NextRequest) {
       clarity: data.clarity,
       activePromos: data.activePromos,
       intelligemsRole: data.intelligemsTest?.role ?? null,
+      intelligemsTests: data.activeTests,
       comments,
       force: body.force === true,
     });

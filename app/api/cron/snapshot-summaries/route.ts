@@ -36,6 +36,7 @@ async function snapshotOne(brand: Brand, path: string): Promise<void> {
     clarity: data.clarity,
     activePromos: data.activePromos,
     intelligemsRole: data.intelligemsTest?.role ?? null,
+      intelligemsTests: data.activeTests,
     comments,
     force: true,
   });

@@ -374,6 +374,7 @@ export default async function PageDeepDivePage({
           clarity: data.clarity,
           activePromos: data.activePromos,
           intelligemsRole: data.intelligemsTest?.role ?? null,
+      intelligemsTests: data.activeTests,
           comments,
         }).catch(() => null)
       : null;
