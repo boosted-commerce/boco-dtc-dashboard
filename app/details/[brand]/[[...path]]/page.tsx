@@ -128,6 +128,24 @@ function RichMetricCard({
   );
 }
 
+// Derive a per-page AOV bucket (revenue ÷ orders) from the order &
+// revenue buckets — no extra query needed.
+function deriveAovBucket(orders: Bucket, revenue: Bucket): Bucket {
+  const div = (r: number, o: number) => (o > 0 ? r / o : 0);
+  const ordByDate = new Map(orders.daily.map((p) => [p.date, p.value]));
+  return {
+    current: div(revenue.current, orders.current),
+    prior: div(revenue.prior, orders.prior),
+    yesterday: div(revenue.yesterday, orders.yesterday),
+    sevenDayTotal: div(revenue.sevenDayTotal, orders.sevenDayTotal),
+    yearAgo: div(revenue.yearAgo, orders.yearAgo),
+    daily: revenue.daily.map((p) => ({
+      date: p.date,
+      value: div(p.value, ordByDate.get(p.date) ?? 0),
+    })),
+  };
+}
+
 function FrictionCard({
   title,
   value,
@@ -585,7 +603,7 @@ export default async function PageDeepDivePage({
             label="vs prior (same-session)"
           />
         </section>
-        <section className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-2">
+        <section className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-3">
           <RichMetricCard
             title={`Orders · ${period}d`}
             bucket={data.orderBucket}
@@ -597,6 +615,12 @@ export default async function PageDeepDivePage({
             bucket={data.revenueBucket}
             kind="currency"
             sparklineColor="text-emerald-600 dark:text-emerald-400"
+          />
+          <RichMetricCard
+            title={`AOV · ${period}d`}
+            bucket={deriveAovBucket(data.orderBucket, data.revenueBucket)}
+            kind="aov"
+            sparklineColor="text-blue-600 dark:text-blue-400"
           />
         </section>
 
