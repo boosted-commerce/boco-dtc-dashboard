@@ -110,15 +110,23 @@ function MetricCard({
   kind,
   sparklineColor = 'text-zinc-700 dark:text-zinc-300',
   markers,
+  today,
 }: {
   title: string;
   bucket: Bucket;
   kind: Format;
   sparklineColor?: string;
   markers?: SparklineMarker[];
+  // Live "today so far" value for this metric (null/undefined = hide).
+  today?: number | null;
 }) {
   const sevenDayAvg = kind === 'aov' ? bucket.sevenDayTotal : bucket.sevenDayTotal / 7;
   const sevenDayLabel = kind === 'aov' ? '7-DAY AOV' : '7-DAY AVG / DAY';
+  // Per-day 7-day baseline for the "Today vs 7-day avg" comparison. For
+  // rate metrics (conv %, AOV) the bucket's sevenDayTotal is already the
+  // rate, so don't divide by 7.
+  const sevenDayBaseline =
+    kind === 'count' || kind === 'currency' ? bucket.sevenDayTotal / 7 : bucket.sevenDayTotal;
 
   return (
     <div className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
@@ -134,6 +142,18 @@ function MetricCard({
       <div className="mt-1">
         <ChangeChip current={bucket.current} prior={bucket.prior} label="vs prior period" />
       </div>
+      {today != null && (
+        <div
+          className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1"
+          title={`Live from Shopify · all channels · 7-day avg/day = ${fmt(sevenDayBaseline, kind)} · sessions & conversion may lag a few hours`}
+        >
+          <span className="rounded bg-sky-50 px-1.5 py-0.5 text-xs font-semibold text-sky-700 dark:bg-sky-950/40 dark:text-sky-300">
+            Today {fmt(today, kind)}
+          </span>
+          <ChangeChip current={today} prior={sevenDayBaseline} label="vs 7-day avg" />
+          <span className="text-xs text-zinc-400 dark:text-zinc-500">({fmt(sevenDayBaseline, kind)})</span>
+        </div>
+      )}
       <div className={`mt-3 ${sparklineColor}`}>
         <Sparkline points={bucket.daily} kind={kind} markers={markers} />
       </div>
@@ -152,13 +172,22 @@ function SubMetricCard({
   kind,
   sparklineColor = 'text-zinc-700 dark:text-zinc-300',
   markers,
+  today,
 }: {
   title: string;
   bucket: SubBucket;
   kind: Format;
   sparklineColor?: string;
   markers?: SparklineMarker[];
+  today?: number | null;
 }) {
+  // SubBucket has no sevenDayTotal — derive a 7-day baseline from the
+  // tail of the daily series. For rate metrics (percent) average the
+  // daily values; for counts/currency average per day too.
+  const last7 = bucket.daily.slice(-7);
+  const sevenDayBaseline =
+    last7.length > 0 ? last7.reduce((s, p) => s + p.value, 0) / last7.length : 0;
+
   return (
     <div className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
       <div className="flex items-baseline justify-between">
@@ -173,6 +202,17 @@ function SubMetricCard({
       <div className="mt-1">
         <ChangeChip current={bucket.current} prior={bucket.prior} label="vs prior period" />
       </div>
+      {today != null && (
+        <div
+          className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1"
+          title="Live from Shopify Orders · subscription orders auto-detected (Recharge)"
+        >
+          <span className="rounded bg-sky-50 px-1.5 py-0.5 text-xs font-semibold text-sky-700 dark:bg-sky-950/40 dark:text-sky-300">
+            Today {fmt(today, kind)}
+          </span>
+          <ChangeChip current={today} prior={sevenDayBaseline} label="vs 7-day avg" />
+        </div>
+      )}
       <div className={`mt-3 ${sparklineColor}`}>
         <Sparkline points={bucket.daily} kind={kind} markers={markers} />
       </div>
@@ -1189,6 +1229,7 @@ export default async function Home({
               kind="count"
               sparklineColor="text-sky-600 dark:text-sky-400"
               markers={sparkMarkers}
+              today={data.today?.sessions}
             />
           )}
           {data.convRate && (
@@ -1198,6 +1239,7 @@ export default async function Home({
               kind="percent"
               sparklineColor="text-sky-600 dark:text-sky-400"
               markers={sparkMarkers}
+              today={data.today?.convRate}
             />
           )}
           <MetricCard
@@ -1206,6 +1248,7 @@ export default async function Home({
             kind="count"
             sparklineColor="text-emerald-600 dark:text-emerald-400"
             markers={sparkMarkers}
+            today={data.today?.orders}
           />
         </section>
 
@@ -1217,6 +1260,7 @@ export default async function Home({
             kind="currency"
             sparklineColor="text-emerald-600 dark:text-emerald-400"
             markers={sparkMarkers}
+            today={data.today?.revenue}
           />
           <MetricCard
             title="AOV"
@@ -1224,6 +1268,7 @@ export default async function Home({
             kind="aov"
             sparklineColor="text-blue-600 dark:text-blue-400"
             markers={sparkMarkers}
+            today={data.today?.aov}
           />
           <SubMetricCard
             title="Subscription Share"

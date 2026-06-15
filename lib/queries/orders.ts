@@ -1,6 +1,11 @@
 import { execute } from '@/lib/snowflake';
 import { withCache } from '@/lib/cache';
-import { getSessionTimeSeries, type SessionDailyPoint } from '@/lib/shopify';
+import {
+  getSessionTimeSeries,
+  getTodayOrders,
+  getTodaySessions,
+  type SessionDailyPoint,
+} from '@/lib/shopify';
 
 export type Period = 7 | 28 | 90;
 export const PERIODS: readonly Period[] = [7, 28, 90] as const;
@@ -82,6 +87,21 @@ export type StoreOverview = {
   // (graceful degrade — Layer 1 still renders the Snowflake-backed cards).
   sessions: Bucket | null;
   convRate: Bucket | null;
+  // Live "today so far" figures (all channels). Orders/revenue from the
+  // Orders API (real-time); sessions/conv from ShopifyQL (may lag a few
+  // hours). null fields where unavailable.
+  today: {
+    sessions: number | null;
+    convRate: number | null;
+    orders: number | null;
+    revenue: number | null;
+    aov: number | null;
+    // Subscription split (auto-detected from Recharge order signals).
+    subscriptionRevenue: number | null;
+    recurringRevenue: number | null;
+    newSubscriptions: number | null;
+    subscriptionShare: number | null; // percent of today's revenue
+  } | null;
 };
 
 const n = (v: unknown) => Number(v ?? 0);
@@ -465,17 +485,50 @@ async function getStoreOverviewUncached(
   period: Period,
   source: SourceFilter,
 ): Promise<StoreOverview> {
-  const [agg, daily, rechargeAgg, rechargeDaily, topProducts, channelMix, sessionSeries] =
-    await Promise.all([
-      getShopifyAggregates(brand, period, source),
-      getShopifyDaily(brand, period, source),
-      getRechargeAggregates(brand, period),
-      getRechargeDaily(brand, period),
-      getTopSubscriptionProducts(brand, period),
-      getChannelMix(brand, period),
-      // Pull ~year-back daily series so all comparison windows can be derived.
-      getSessionTimeSeries(brand, 365 + period),
-    ]);
+  const [
+    agg,
+    daily,
+    rechargeAgg,
+    rechargeDaily,
+    topProducts,
+    channelMix,
+    sessionSeries,
+    todayOrders,
+    todaySessions,
+  ] = await Promise.all([
+    getShopifyAggregates(brand, period, source),
+    getShopifyDaily(brand, period, source),
+    getRechargeAggregates(brand, period),
+    getRechargeDaily(brand, period),
+    getTopSubscriptionProducts(brand, period),
+    getChannelMix(brand, period),
+    // Pull ~year-back daily series so all comparison windows can be derived.
+    getSessionTimeSeries(brand, 365 + period),
+    // Live "today so far" — best-effort, tolerant of errors.
+    getTodayOrders(brand).catch(() => null),
+    getTodaySessions(brand).catch(() => null),
+  ]);
+
+  const today =
+    todayOrders || todaySessions
+      ? {
+          sessions: todaySessions?.sessions ?? null,
+          convRate: todaySessions?.convRate ?? null,
+          orders: todayOrders?.orders ?? null,
+          revenue: todayOrders?.revenue ?? null,
+          aov:
+            todayOrders && todayOrders.orders > 0
+              ? todayOrders.revenue / todayOrders.orders
+              : null,
+          subscriptionRevenue: todayOrders?.subRevenue ?? null,
+          recurringRevenue: todayOrders?.recurringRevenue ?? null,
+          newSubscriptions: todayOrders?.newSubOrders ?? null,
+          subscriptionShare:
+            todayOrders && todayOrders.revenue > 0
+              ? (todayOrders.subRevenue / todayOrders.revenue) * 100
+              : null,
+        }
+      : null;
 
   const ordersDaily: DailyPoint[] = daily.map((r) => ({ date: r.D, value: n(r.ORDERS) }));
   const revenueDaily: DailyPoint[] = daily.map((r) => ({ date: r.D, value: n(r.REVENUE) }));
@@ -597,5 +650,6 @@ async function getStoreOverviewUncached(
     topSubscriptionProducts: topProducts,
     sessions,
     convRate,
+    today,
   };
 }
