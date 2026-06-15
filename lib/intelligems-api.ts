@@ -49,6 +49,7 @@ export type ActiveTest = {
   origins: string[]; // redirect origins (paths)
   destinations: string[]; // redirect destinations (paths)
   targetPaths: string[]; // page-targeting urlPath values (on-site edits)
+  redirects: { origin: string; destination: string }[]; // paired origin→destination
 };
 
 // Normalize a URL or path to a clean path (strip protocol+host, query,
@@ -84,17 +85,110 @@ export async function fetchActiveExperiences(brand: Brand): Promise<RawExperienc
   return (json.experiencesList ?? []).filter((e) => !e.status || e.status === 'started');
 }
 
+// Raw analytics for one experiment (cohort-attributed results per
+// variation + significance). Schema TBD — used by the debug route to
+// capture the real shape before building the Tier 2 results card.
+export async function fetchExperienceAnalytics(
+  brand: Brand,
+  experienceId: string,
+): Promise<unknown> {
+  const t = token(brand);
+  if (!t) return { error: 'no token' };
+  const res = await fetch(`${BASE}/analytics/resource/${experienceId}`, {
+    headers: { 'intelligems-access-token': t, accept: 'application/json' },
+    cache: 'no-store',
+  });
+  if (!res.ok) return { error: `HTTP ${res.status}`, body: await res.text().catch(() => '') };
+  return res.json();
+}
+
+// Cohort-attributed results per variation (Tier 2). Values are fractions
+// for rates (conv) and dollars for revenue. CIs available but not surfaced
+// in the lean shape yet.
+export type VariationResult = {
+  id: string;
+  name: string;
+  isControl: boolean;
+  visitors: number;
+  orders: number;
+  convRate: number | null; // fraction 0-1
+  rpv: number | null; // net revenue per visitor ($)
+  aov: number | null; // net revenue per order ($)
+  netRevenue: number | null;
+};
+export type ExperienceResults = {
+  experienceId: string;
+  experienceName: string;
+  variations: VariationResult[];
+};
+
+// Pull a {value} out of a metric cell like { value, ci_low, ... }.
+function metricNum(row: Record<string, unknown> | undefined, key: string): number | null {
+  const m = row?.[key];
+  if (m && typeof m === 'object' && 'value' in (m as object)) {
+    const v = (m as { value?: unknown }).value;
+    return typeof v === 'number' ? v : null;
+  }
+  return null;
+}
+
+// Cohort-attributed results for one experiment, mapped + cached.
+export async function getExperienceResults(
+  brand: Brand,
+  experienceId: string,
+): Promise<ExperienceResults | null> {
+  if (!token(brand)) return null;
+  return withCache(`intelligems:results:${brand}:${experienceId}:v1`, CACHE_TTL_SECONDS, async () => {
+    try {
+      const raw = (await fetchExperienceAnalytics(brand, experienceId)) as {
+        experienceName?: string;
+        metrics?: Array<Record<string, unknown>>;
+        variations?: Array<{ id: string; name?: string; isControl?: boolean; order?: number }>;
+      };
+      if (!raw || !Array.isArray(raw.variations) || raw.variations.length === 0) return null;
+      const metricsByVar = new Map<string, Record<string, unknown>>();
+      for (const m of raw.metrics ?? []) {
+        const vid = m['variation_id'];
+        if (typeof vid === 'string') metricsByVar.set(vid, m);
+      }
+      const variations: VariationResult[] = raw.variations
+        .slice()
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+        .map((v) => {
+          const m = metricsByVar.get(v.id);
+          return {
+            id: v.id,
+            name: v.name ?? 'Variation',
+            isControl: Boolean(v.isControl),
+            visitors: metricNum(m, 'n_visitors') ?? 0,
+            orders: metricNum(m, 'n_orders') ?? 0,
+            convRate: metricNum(m, 'conversion_rate'),
+            rpv: metricNum(m, 'net_revenue_per_visitor'),
+            aov: metricNum(m, 'net_revenue_per_order'),
+            netRevenue: metricNum(m, 'net_revenue'),
+          };
+        });
+      return { experienceId, experienceName: raw.experienceName ?? '', variations };
+    } catch (err) {
+      console.error(`Intelligems results ${brand}/${experienceId} failed:`, err);
+      return null;
+    }
+  });
+}
+
 function mapToActiveTests(experiences: RawExperience[]): ActiveTest[] {
   return experiences.map((e) => {
     const origins = new Set<string>();
     const destinations = new Set<string>();
     const targetPaths = new Set<string>();
+    const pairs = new Map<string, string>(); // origin → destination
     for (const v of e.variations ?? []) {
       for (const r of v.redirects ?? []) {
         const o = toPath(r.originUrl);
         const d = toPath(r.destinationUrl);
         if (o) origins.add(o);
         if (d) destinations.add(d);
+        if (o && d) pairs.set(o, d);
       }
     }
     // On-site edits target by URL path (no redirect). Extract those.
@@ -114,6 +208,7 @@ function mapToActiveTests(experiences: RawExperience[]): ActiveTest[] {
       origins: [...origins],
       destinations: [...destinations],
       targetPaths: [...targetPaths],
+      redirects: [...pairs].map(([origin, destination]) => ({ origin, destination })),
     };
   });
 }
@@ -128,6 +223,7 @@ function staticToActive(brand: Brand): ActiveTest[] {
     origins: t.origins,
     destinations: t.destinations,
     targetPaths: [],
+    redirects: [],
   }));
 }
 

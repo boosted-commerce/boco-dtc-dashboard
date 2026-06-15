@@ -8,7 +8,13 @@ import {
 import { getClarityMetrics, type ClarityPageMetrics } from '@/lib/clarity-metrics';
 import { getActivePromos } from '@/lib/queries/promos';
 import { type IntelligemsTest } from '@/lib/intelligems-tests';
-import { getActiveTests, matchActiveTestsForPath, type ActiveTest } from '@/lib/intelligems-api';
+import {
+  getActiveTests,
+  getExperienceResults,
+  matchActiveTestsForPath,
+  type ActiveTest,
+  type ExperienceResults,
+} from '@/lib/intelligems-api';
 import type { Brand, Period } from '@/lib/queries/orders';
 import type { Promo } from '@/lib/queries/promos';
 
@@ -44,13 +50,19 @@ export type PageDeepDive = {
   // test, surface the role + test deep link (drives the header pill).
   intelligemsTest: { test: IntelligemsTest; role: 'origin' | 'destination' } | null;
   // All active Intelligems tests located to this page (redirect tests +
-  // on-site edits targeting this URL) — for the deep-dive section.
+  // on-site edits targeting this URL) — for the deep-dive section, each
+  // with its cohort-attributed results when available.
   activeTests: {
     id: string;
     name: string;
     type: string;
     testUrl: string;
     role: 'origin' | 'destination' | 'targeted';
+    results: ExperienceResults | null;
+    // When this page is a redirect origin, where its traffic is sent.
+    redirectsTo: string[];
+    // When this page is a redirect destination, which pages funnel here.
+    redirectedFrom: string[];
   }[];
 };
 
@@ -130,7 +142,7 @@ export async function getPageDeepDive(
   // Bump the version when the PageDeepDive shape changes so stale cached
   // objects (missing newer fields like activeTests) can't be served.
   return withCache(
-    `deepdive:${brand}:${period}:${encodeURIComponent(path)}:v3`,
+    `deepdive:${brand}:${period}:${encodeURIComponent(path)}:v5`,
     120,
     () => getPageDeepDiveUncached(brand, path, period),
   );
@@ -192,17 +204,26 @@ async function getPageDeepDiveUncached(
           | 'destination',
       }
     : null;
-  const activeTests = onPage.map((t) => ({
-    id: t.id,
-    name: t.name,
-    type: t.type,
-    testUrl: t.testUrl,
-    role: (t.origins.includes(path)
-      ? 'origin'
-      : t.destinations.includes(path)
-        ? 'destination'
-        : 'targeted') as 'origin' | 'destination' | 'targeted',
-  }));
+  const activeTests = await Promise.all(
+    onPage.map(async (t) => ({
+      id: t.id,
+      name: t.name,
+      type: t.type,
+      testUrl: t.testUrl,
+      role: (t.origins.includes(path)
+        ? 'origin'
+        : t.destinations.includes(path)
+          ? 'destination'
+          : 'targeted') as 'origin' | 'destination' | 'targeted',
+      results: await getExperienceResults(brand, t.id).catch(() => null),
+      redirectsTo: t.redirects
+        .filter((r) => r.origin === path)
+        .map((r) => r.destination),
+      redirectedFrom: t.redirects
+        .filter((r) => r.destination === path)
+        .map((r) => r.origin),
+    })),
+  );
 
   return {
     brand,
