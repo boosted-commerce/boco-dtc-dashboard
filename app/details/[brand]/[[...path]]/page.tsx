@@ -13,6 +13,9 @@ import { PageComments } from '@/app/_components/page-comments';
 import { GenerateNarrativeButton } from '@/app/_components/narrative-actions';
 import { HistoryPicker } from '@/app/_components/history-picker';
 import type { ExperienceResults } from '@/lib/intelligems-api';
+import { Sparkline } from '@/app/_components/sparkline';
+import { fmt, type Format } from '@/lib/format';
+import type { Bucket } from '@/lib/queries/orders';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -24,9 +27,6 @@ export const maxDuration = 60;
 
 function fmtCount(n: number): string {
   return Math.round(n).toLocaleString();
-}
-function fmtCurrency(n: number): string {
-  return `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 }
 function fmtPct(n: number): string {
   return `${n.toFixed(2)}%`;
@@ -74,6 +74,76 @@ function MetricCard({
       </div>
     </div>
   );
+}
+
+function Tiny({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-wider text-zinc-400 dark:text-zinc-500">{label}</div>
+      <div className="mt-0.5 text-sm font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">{value}</div>
+    </div>
+  );
+}
+
+// Layer-1-style rich card for a single page (sparkline + Yesterday /
+// 7-day avg / Year-ago). Used for per-page Orders & Revenue.
+function RichMetricCard({
+  title,
+  bucket,
+  kind,
+  sparklineColor,
+}: {
+  title: string;
+  bucket: Bucket;
+  kind: Format;
+  sparklineColor: string;
+}) {
+  const change = pctChange(bucket.current, bucket.prior);
+  const sevenDayAvg = kind === 'aov' ? bucket.sevenDayTotal : bucket.sevenDayTotal / 7;
+  const sevenDayLabel = kind === 'aov' ? '7-DAY AOV' : '7-DAY AVG/DAY';
+  return (
+    <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+      <div className="text-[11px] uppercase tracking-wider text-zinc-500 dark:text-zinc-400">{title}</div>
+      <div className="mt-2 text-2xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
+        {fmt(bucket.current, kind)}
+      </div>
+      <div className="mt-1 text-xs">
+        {change ? (
+          <span className={`font-medium ${change.color}`}>
+            {change.arrow} {change.text} <span className="text-zinc-500 dark:text-zinc-400">vs prior</span>
+          </span>
+        ) : (
+          <span className="text-zinc-400 dark:text-zinc-500">new (no prior comparison)</span>
+        )}
+      </div>
+      <div className={`mt-3 ${sparklineColor}`}>
+        <Sparkline points={bucket.daily} kind={kind} />
+      </div>
+      <div className="mt-3 grid grid-cols-3 gap-2 border-t border-zinc-100 pt-2 dark:border-zinc-800">
+        <Tiny label="Yesterday" value={fmt(bucket.yesterday, kind)} />
+        <Tiny label={sevenDayLabel} value={fmt(sevenDayAvg, kind)} />
+        <Tiny label="Year ago" value={fmt(bucket.yearAgo, kind)} />
+      </div>
+    </div>
+  );
+}
+
+// Derive a per-page AOV bucket (revenue ÷ orders) from the order &
+// revenue buckets — no extra query needed.
+function deriveAovBucket(orders: Bucket, revenue: Bucket): Bucket {
+  const div = (r: number, o: number) => (o > 0 ? r / o : 0);
+  const ordByDate = new Map(orders.daily.map((p) => [p.date, p.value]));
+  return {
+    current: div(revenue.current, orders.current),
+    prior: div(revenue.prior, orders.prior),
+    yesterday: div(revenue.yesterday, orders.yesterday),
+    sevenDayTotal: div(revenue.sevenDayTotal, orders.sevenDayTotal),
+    yearAgo: div(revenue.yearAgo, orders.yearAgo),
+    daily: revenue.daily.map((p) => ({
+      date: p.date,
+      value: div(p.value, ordByDate.get(p.date) ?? 0),
+    })),
+  };
 }
 
 function FrictionCard({
@@ -304,6 +374,7 @@ export default async function PageDeepDivePage({
           clarity: data.clarity,
           activePromos: data.activePromos,
           intelligemsRole: data.intelligemsTest?.role ?? null,
+      intelligemsTests: data.activeTests,
           comments,
         }).catch(() => null)
       : null;
@@ -515,8 +586,9 @@ export default async function PageDeepDivePage({
           </section>
         )}
 
-        {/* Core metric cards */}
-        <section className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+        {/* Core metric cards. Sessions/Conv (ShopifyQL, current-vs-prior)
+            on top; Orders/Revenue as full Layer-1-style cards below. */}
+        <section className="mb-3 grid grid-cols-2 gap-3">
           <MetricCard
             title={`Sessions · ${period}d`}
             value={fmtCount(data.sessions.current)}
@@ -531,19 +603,33 @@ export default async function PageDeepDivePage({
             prior={data.convRate.prior}
             label="vs prior (same-session)"
           />
-          <MetricCard
+        </section>
+        <section className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-2">
+          <RichMetricCard
             title={`Orders · ${period}d`}
-            value={fmtCount(data.orderCount.current)}
-            current={data.orderCount.current}
-            prior={data.orderCount.prior}
-            label="vs prior"
+            bucket={data.orderBucket}
+            kind="count"
+            sparklineColor="text-emerald-600 dark:text-emerald-400"
           />
-          <MetricCard
+          <RichMetricCard
             title={`Revenue · ${period}d`}
-            value={fmtCurrency(data.revenue.current)}
-            current={data.revenue.current}
-            prior={data.revenue.prior}
-            label="vs prior"
+            bucket={data.revenueBucket}
+            kind="currency"
+            sparklineColor="text-emerald-600 dark:text-emerald-400"
+          />
+          <RichMetricCard
+            title={`AOV · ${period}d`}
+            bucket={deriveAovBucket(data.orderBucket, data.revenueBucket)}
+            kind="aov"
+            sparklineColor="text-blue-600 dark:text-blue-400"
+          />
+          {/* Subscription revenue landed on this page (web subscription
+              orders). Always shown ($0 where none), like AOV. */}
+          <RichMetricCard
+            title={`Subscription rev (landed here) · ${period}d`}
+            bucket={data.subRevenueBucket}
+            kind="currency"
+            sparklineColor="text-purple-600 dark:text-purple-400"
           />
         </section>
 
