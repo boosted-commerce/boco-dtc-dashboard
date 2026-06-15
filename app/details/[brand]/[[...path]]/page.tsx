@@ -603,7 +603,7 @@ export default async function PageDeepDivePage({
             label="vs prior (same-session)"
           />
         </section>
-        <section className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-3">
+        <section className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-2">
           <RichMetricCard
             title={`Orders · ${period}d`}
             bucket={data.orderBucket}
@@ -622,19 +622,15 @@ export default async function PageDeepDivePage({
             kind="aov"
             sparklineColor="text-blue-600 dark:text-blue-400"
           />
+          {/* Subscription revenue landed on this page (web subscription
+              orders). Always shown ($0 where none), like AOV. */}
+          <RichMetricCard
+            title={`Subscription rev (landed here) · ${period}d`}
+            bucket={data.subRevenueBucket}
+            kind="currency"
+            sparklineColor="text-purple-600 dark:text-purple-400"
+          />
         </section>
-        {/* Subscription revenue landed on this page (web subscription
-            orders). Only shown when there's any, to avoid empty cards. */}
-        {(data.subRevenueBucket.current > 0 || data.subRevenueBucket.prior > 0) && (
-          <section className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-3">
-            <RichMetricCard
-              title={`Subscription rev (landed here) · ${period}d`}
-              bucket={data.subRevenueBucket}
-              kind="currency"
-              sparklineColor="text-purple-600 dark:text-purple-400"
-            />
-          </section>
-        )}
 
         {/* Scroll depth bar */}
         <section className="mb-6">
