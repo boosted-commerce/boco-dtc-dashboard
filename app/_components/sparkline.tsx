@@ -192,7 +192,8 @@ export function Sparkline({
           </>
         )}
       </svg>
-      {/* Tooltip — anchored to the hovered day, centered over it. */}
+      {/* Tooltip — anchored to the hovered day, centered over it. Also
+          surfaces any promo running on that day. */}
       {active !== null && (
         <div
           className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-md border border-zinc-200 bg-white px-2 py-1 text-center shadow-sm dark:border-zinc-700 dark:bg-zinc-900"
@@ -204,6 +205,13 @@ export function Sparkline({
           <div className="text-xs font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
             {fmt(points[active].value, kind)}
           </div>
+          {(bands ?? [])
+            .filter((b) => points[active].date >= b.start && points[active].date <= b.end)
+            .map((b, i) => (
+              <div key={`pb-${i}`} className="mt-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                🏷 {b.label}
+              </div>
+            ))}
         </div>
       )}
     </div>

@@ -29,9 +29,11 @@ export const SOURCES = ['all', 'dtc'] as const;
 export type SourceFilter = (typeof SOURCES)[number];
 
 export function parseSource(raw: unknown): SourceFilter {
+  // Default to DTC — this is a DTC dashboard, so the default view should
+  // be DTC-only unless the user explicitly switches to all channels.
   return (SOURCES as readonly string[]).includes(raw as string)
     ? (raw as SourceFilter)
-    : 'all';
+    : 'dtc';
 }
 
 export type DailyPoint = { date: string; value: number };
