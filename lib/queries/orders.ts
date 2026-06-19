@@ -29,9 +29,11 @@ export const SOURCES = ['all', 'dtc'] as const;
 export type SourceFilter = (typeof SOURCES)[number];
 
 export function parseSource(raw: unknown): SourceFilter {
+  // Default to DTC — this is a DTC dashboard, so the default view should
+  // be DTC-only unless the user explicitly switches to all channels.
   return (SOURCES as readonly string[]).includes(raw as string)
     ? (raw as SourceFilter)
-    : 'all';
+    : 'dtc';
 }
 
 export type DailyPoint = { date: string; value: number };
@@ -504,8 +506,9 @@ async function getStoreOverviewUncached(
     getChannelMix(brand, period),
     // Pull ~year-back daily series so all comparison windows can be derived.
     getSessionTimeSeries(brand, 365 + period),
-    // Live "today so far" — best-effort, tolerant of errors.
-    getTodayOrders(brand).catch(() => null),
+    // Live "today so far" — best-effort, tolerant of errors. Orders honor
+    // the DTC/all-channels toggle; sessions are storefront-only regardless.
+    getTodayOrders(brand, source).catch(() => null),
     getTodaySessions(brand).catch(() => null),
   ]);
 
