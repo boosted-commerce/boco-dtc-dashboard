@@ -169,7 +169,10 @@ const ORDER_FIELDS = `test sourceName tags app{ name } currentTotalPriceSet{ sho
 
 // Today's non-test orders + revenue (all channels), live from the Orders
 // API, with an auto-detected subscription split. Paginates (capped).
-export async function getTodayOrders(brand: Brand): Promise<TodayOrders | null> {
+export async function getTodayOrders(
+  brand: Brand,
+  source: 'all' | 'dtc' = 'all',
+): Promise<TodayOrders | null> {
   const startIso = await shopStartOfTodayIso(brand);
   const q = `created_at:>='${startIso}'`;
   let cursor: string | null = null;
@@ -203,6 +206,9 @@ export async function getTodayOrders(brand: Brand): Promise<TodayOrders | null> 
     any = true;
     for (const o of conn.nodes ?? []) {
       if (o.test) continue;
+      // DTC-only toggle → count just online-store ('web') orders, matching
+      // the Snowflake SOURCE_NAME = 'web' definition.
+      if (source === 'dtc' && (o.sourceName ?? '').toLowerCase() !== 'web') continue;
       const amt = Number(o.currentTotalPriceSet?.shopMoney?.amount ?? 0) || 0;
       t.orders += 1;
       t.revenue += amt;

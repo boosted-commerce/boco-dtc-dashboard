@@ -8,6 +8,8 @@ import type { DailyPoint } from '@/lib/queries/orders';
 // promo start/end dates so the team can visually correlate metric
 // shifts with what's running.
 export type SparklineMarker = { date: string; kind: 'start' | 'end'; label: string };
+// A promo period to shade on the chart (start/end inclusive).
+export type SparklineBand = { start: string; end: string; label: string };
 
 export function Sparkline({
   points,
@@ -16,6 +18,7 @@ export function Sparkline({
   width = 240,
   height = 48,
   markers,
+  bands,
   interactive = true,
   showPeak = interactive,
 }: {
@@ -26,6 +29,8 @@ export function Sparkline({
   width?: number;
   height?: number;
   markers?: SparklineMarker[];
+  // Shaded promo windows (start→end), so the promo period is visible.
+  bands?: SparklineBand[];
   // Enables the hover tooltip + cursor guide. Disable for a fully
   // static line.
   interactive?: boolean;
@@ -76,6 +81,23 @@ export function Sparkline({
     return [{ x, kind: m.kind, label: m.label }];
   });
 
+  // Promo windows → shaded rects. Clamp to the chart's date range so a
+  // promo that started before / ends after the window still shades the
+  // visible portion. Skipped if it doesn't overlap the window at all.
+  const firstDate = points[0].date;
+  const lastDate = points[points.length - 1].date;
+  const bandRects = (bands ?? []).flatMap((b) => {
+    if (b.end < firstDate || b.start > lastDate) return [];
+    let startIdx = points.findIndex((p) => p.date >= b.start);
+    if (startIdx < 0) startIdx = 0;
+    let endIdx = -1;
+    for (let i = 0; i < points.length; i++) if (points[i].date <= b.end) endIdx = i;
+    if (endIdx < 0) endIdx = points.length - 1;
+    const x1 = pad + startIdx * stepX;
+    const x2 = pad + endIdx * stepX;
+    return [{ x: x1, w: Math.max(2, x2 - x1), label: b.label }];
+  });
+
   // Translate cursor position to the nearest day index. preserveAspect-
   // Ratio="none" stretches the viewBox to the container width, so we map
   // off the container's pixel rect rather than viewBox units.
@@ -105,6 +127,20 @@ export function Sparkline({
         aria-hidden="true"
       >
         <path d={areaPath} fill="currentColor" opacity="0.08" />
+        {/* Promo windows — shaded amber band spanning the promo period. */}
+        {bandRects.map((b, i) => (
+          <rect
+            key={`band-${i}`}
+            x={b.x.toFixed(1)}
+            y={pad}
+            width={b.w.toFixed(1)}
+            height={innerH}
+            fill="#f59e0b"
+            opacity="0.12"
+          >
+            <title>{b.label}</title>
+          </rect>
+        ))}
         {/* Promo markers — vertical amber dashed line. Render BEFORE the
             line path so the metric trend sits on top visually. */}
         {markerLines.map((m, i) => (

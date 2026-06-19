@@ -37,7 +37,7 @@ import { HideButton } from '@/app/_components/hide-button';
 import { HiddenManager } from '@/app/_components/hidden-manager';
 import { AddPinnedInput, UnpinButton } from '@/app/_components/pin-controls';
 import { isAuthConfigured } from '@/lib/auth';
-import { Sparkline, type SparklineMarker } from '@/app/_components/sparkline';
+import { Sparkline, type SparklineMarker, type SparklineBand } from '@/app/_components/sparkline';
 import { fmt, type Format } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
@@ -65,6 +65,15 @@ function promosToMarkers(promos: Promo[]): SparklineMarker[] {
     });
   }
   return out;
+}
+
+// Promo windows → shaded sparkline bands (the full promo period).
+function promosToBands(promos: Promo[]): SparklineBand[] {
+  return promos.map((p) => ({
+    start: p.startDate,
+    end: p.endDate,
+    label: `${p.name} · ${p.startDate} → ${p.endDate}`,
+  }));
 }
 
 function ChangeChip({
@@ -110,6 +119,7 @@ function MetricCard({
   kind,
   sparklineColor = 'text-zinc-700 dark:text-zinc-300',
   markers,
+  bands,
   today,
 }: {
   title: string;
@@ -117,6 +127,7 @@ function MetricCard({
   kind: Format;
   sparklineColor?: string;
   markers?: SparklineMarker[];
+  bands?: SparklineBand[];
   // Live "today so far" value for this metric (null/undefined = hide).
   today?: number | null;
 }) {
@@ -155,7 +166,7 @@ function MetricCard({
         </div>
       )}
       <div className={`mt-3 ${sparklineColor}`}>
-        <Sparkline points={bucket.daily} kind={kind} markers={markers} />
+        <Sparkline points={bucket.daily} kind={kind} markers={markers} bands={bands} />
       </div>
       <div className="mt-3 grid grid-cols-3 gap-2 border-t border-zinc-100 pt-3 dark:border-zinc-800">
         <Tiny label="Yesterday" value={fmt(bucket.yesterday, kind)} />
@@ -172,6 +183,7 @@ function SubMetricCard({
   kind,
   sparklineColor = 'text-zinc-700 dark:text-zinc-300',
   markers,
+  bands,
   today,
 }: {
   title: string;
@@ -179,6 +191,7 @@ function SubMetricCard({
   kind: Format;
   sparklineColor?: string;
   markers?: SparklineMarker[];
+  bands?: SparklineBand[];
   today?: number | null;
 }) {
   // SubBucket has no sevenDayTotal — derive a 7-day baseline from the
@@ -214,7 +227,7 @@ function SubMetricCard({
         </div>
       )}
       <div className={`mt-3 ${sparklineColor}`}>
-        <Sparkline points={bucket.daily} kind={kind} markers={markers} />
+        <Sparkline points={bucket.daily} kind={kind} markers={markers} bands={bands} />
       </div>
     </div>
   );
@@ -1098,6 +1111,7 @@ export default async function Home({
   // If we're on the watched tab, layer2Rows IS the watched rows — use it.
   const watchedRows = tab === 'watched' ? layer2Rows : watchedRowsForNarrative;
   const sparkMarkers = promosToMarkers(sparkPromos);
+  const sparkBands = promosToBands(sparkPromos);
 
   // Narrative depends on the resolved overview + promos + Northbeam, so
   // it can't go in the parallel Promise.all above. Returns null on any
@@ -1229,6 +1243,7 @@ export default async function Home({
               kind="count"
               sparklineColor="text-sky-600 dark:text-sky-400"
               markers={sparkMarkers}
+              bands={sparkBands}
               today={data.today?.sessions}
             />
           )}
@@ -1239,6 +1254,7 @@ export default async function Home({
               kind="percent"
               sparklineColor="text-sky-600 dark:text-sky-400"
               markers={sparkMarkers}
+              bands={sparkBands}
               today={data.today?.convRate}
             />
           )}
@@ -1248,6 +1264,7 @@ export default async function Home({
             kind="count"
             sparklineColor="text-emerald-600 dark:text-emerald-400"
             markers={sparkMarkers}
+            bands={sparkBands}
             today={data.today?.orders}
           />
         </section>
@@ -1260,6 +1277,7 @@ export default async function Home({
             kind="currency"
             sparklineColor="text-emerald-600 dark:text-emerald-400"
             markers={sparkMarkers}
+            bands={sparkBands}
             today={data.today?.revenue}
           />
           <MetricCard
@@ -1268,6 +1286,7 @@ export default async function Home({
             kind="aov"
             sparklineColor="text-blue-600 dark:text-blue-400"
             markers={sparkMarkers}
+            bands={sparkBands}
             today={data.today?.aov}
           />
           <SubMetricCard
@@ -1276,6 +1295,7 @@ export default async function Home({
             kind="percent"
             sparklineColor="text-purple-600 dark:text-purple-400"
             markers={sparkMarkers}
+            bands={sparkBands}
           />
         </section>
 
@@ -1287,6 +1307,7 @@ export default async function Home({
             kind="currency"
             sparklineColor="text-purple-600 dark:text-purple-400"
             markers={sparkMarkers}
+            bands={sparkBands}
           />
           <MetricCard
             title="Recurring Revenue"
@@ -1294,6 +1315,7 @@ export default async function Home({
             kind="currency"
             sparklineColor="text-purple-600 dark:text-purple-400"
             markers={sparkMarkers}
+            bands={sparkBands}
           />
           <SubMetricCard
             title="New Subscriptions"
@@ -1301,6 +1323,7 @@ export default async function Home({
             kind="count"
             sparklineColor="text-purple-600 dark:text-purple-400"
             markers={sparkMarkers}
+            bands={sparkBands}
           />
         </section>
 

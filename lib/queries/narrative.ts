@@ -174,9 +174,11 @@ ${recentLines ? `\nRecently ended:\n${recentLines}` : ''}
 ${upcomingLines ? `\nStarting soon:\n${upcomingLines}` : ''}
 
 INSTRUCTIONS:
+FOCUS: This is a DTC dashboard — center the narrative on DTC (Shopify online-store / web) performance: site revenue, conversion, AOV, subscriptions, paid efficiency to the site, and watched pages. Treat non-DTC channels (Amazon, TikTok Shop, Faire/wholesale, retail/POS, etc.) as secondary — mention one only if it's the dominant driver of a DTC-relevant shift, and keep it brief. Do NOT center the summary on Amazon or other marketplaces.
+
 Write 3-5 sentences (max 110 words total) covering:
-1. The most notable shift in core metrics this window
-2. Where that shift concentrated — a specific channel, product, or page (use the per-platform Northbeam, top sub products, or watched pages context to attribute the change to specifics, not vague directional words). For example: "The 33% subscription revenue surge came almost entirely from Joy Filled (240 new subs of 320 total)."
+1. The most notable shift in core DTC metrics this window
+2. Where that shift concentrated — a specific DTC channel, product, or page (use the per-platform Northbeam, top sub products, or watched pages context to attribute the change to specifics, not vague directional words). For example: "The 33% subscription revenue surge came almost entirely from Joy Filled (240 new subs of 320 total)."
 3. One thing worth attention — a divergence, risk, or opportunity supported by the data (Clarity red flags on a watched page, ROAS drop on a specific platform, conversion gap, etc.)
 
 Style: factual, concrete, no hype, no hedging, no bullet points, no markdown. Use specific numbers and named entities (channel/product/page names) from the data. Don't recommend actions unless the data strongly supports one. Write as plain prose.`;

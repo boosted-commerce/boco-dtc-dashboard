@@ -504,8 +504,9 @@ async function getStoreOverviewUncached(
     getChannelMix(brand, period),
     // Pull ~year-back daily series so all comparison windows can be derived.
     getSessionTimeSeries(brand, 365 + period),
-    // Live "today so far" — best-effort, tolerant of errors.
-    getTodayOrders(brand).catch(() => null),
+    // Live "today so far" — best-effort, tolerant of errors. Orders honor
+    // the DTC/all-channels toggle; sessions are storefront-only regardless.
+    getTodayOrders(brand, source).catch(() => null),
     getTodaySessions(brand).catch(() => null),
   ]);
 
