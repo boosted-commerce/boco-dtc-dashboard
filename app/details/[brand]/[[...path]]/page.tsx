@@ -12,6 +12,7 @@ import { getWatchedPaths } from '@/lib/watched-store';
 import { PageComments } from '@/app/_components/page-comments';
 import { GenerateNarrativeButton } from '@/app/_components/narrative-actions';
 import { HistoryPicker } from '@/app/_components/history-picker';
+import { RefreshIntelligems } from '@/app/_components/refresh-intelligems';
 import type { ExperienceResults } from '@/lib/intelligems-api';
 import { Sparkline } from '@/app/_components/sparkline';
 import { fmt, type Format } from '@/lib/format';
@@ -511,12 +512,18 @@ export default async function PageDeepDivePage({
           </section>
         )}
 
-        {/* Active A/B tests located to this page (live from Intelligems) */}
-        {(data.activeTests?.length ?? 0) > 0 && (
-          <section className="mb-6 rounded-lg border border-amber-200 bg-amber-50/40 px-5 py-4 dark:border-amber-900/60 dark:bg-amber-950/10">
-            <div className="mb-2 text-sm font-medium text-amber-800 dark:text-amber-300">
+        {/* Active A/B tests located to this page (live from Intelligems).
+            Always rendered so the Sync button + "none detected" note show
+            even when no test is mapped to this page. */}
+        <section className="mb-6 rounded-lg border border-amber-200 bg-amber-50/40 px-5 py-4 dark:border-amber-900/60 dark:bg-amber-950/10">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <div className="text-sm font-medium text-amber-800 dark:text-amber-300">
               Active A/B tests on this page
             </div>
+            <RefreshIntelligems brand={brand} />
+          </div>
+          {(data.activeTests?.length ?? 0) > 0 ? (
+            <>
             <ul className="space-y-3">
               {data.activeTests.map((t) => (
                 <li key={t.id} className="border-t border-amber-100 pt-2 first:border-t-0 first:pt-0 dark:border-amber-900/40">
@@ -583,8 +590,16 @@ export default async function PageDeepDivePage({
               (cohort-attributed across the whole experiment, not just this page). Template-only tests
               aren&rsquo;t listed — Intelligems doesn&rsquo;t expose their page path via the API.
             </p>
-          </section>
-        )}
+            </>
+          ) : (
+            <p className="text-xs text-zinc-600 dark:text-zinc-400">
+              No Intelligems test located to this page. If you just started one, click{' '}
+              <span className="font-medium">Sync from Intelligems</span> (data caches ~30 min).
+              Note: template-type tests and tests targeted by product (rather than a URL) can&rsquo;t
+              be auto-located to a page.
+            </p>
+          )}
+        </section>
 
         {/* Core metric cards. Sessions/Conv (ShopifyQL, current-vs-prior)
             on top; Orders/Revenue as full Layer-1-style cards below. */}
