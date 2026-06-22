@@ -76,6 +76,19 @@ function promosToBands(promos: Promo[]): SparklineBand[] {
   }));
 }
 
+// Derive a human-readable title from a URL path's last slug, for the
+// Layer 2 page rows (friendlier than the raw URL). Not the literal
+// Shopify title — a cleaned-up version of the handle.
+function prettyTitleFromPath(path: string): string {
+  if (!path || path === '/') return 'Home';
+  const seg = path.split('?')[0].split('/').filter(Boolean).pop() ?? '';
+  if (!seg) return 'Home';
+  return seg
+    .replace(/[-_]+/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+    .trim();
+}
+
 function ChangeChip({
   current,
   prior,
@@ -894,7 +907,7 @@ function Layer2Table({
                       className="group inline-flex max-w-full items-center gap-1 truncate font-medium text-sky-700 underline decoration-sky-200 decoration-1 underline-offset-2 hover:decoration-sky-500 dark:text-sky-400 dark:decoration-sky-900 dark:hover:decoration-sky-500"
                       title="Open page deep-dive"
                     >
-                      <span className="truncate">{r.label}</span>
+                      <span className="truncate">{prettyTitleFromPath(r.key)}</span>
                       <span
                         className="shrink-0 text-xs text-sky-400 transition group-hover:translate-x-0.5 group-hover:text-sky-700 dark:text-sky-600 dark:group-hover:text-sky-400"
                         aria-hidden="true"
@@ -954,10 +967,16 @@ function Layer2Table({
                     hideable && <HideButton brand={brand} path={r.key} />
                   )}
                 </div>
-                {r.sublabel && (
-                  <div className="truncate text-xs text-zinc-500 dark:text-zinc-400">
-                    {r.sublabel}
+                {starrable ? (
+                  <div className="truncate font-mono text-[11px] text-zinc-400 dark:text-zinc-500">
+                    {r.key}
                   </div>
+                ) : (
+                  r.sublabel && (
+                    <div className="truncate text-xs text-zinc-500 dark:text-zinc-400">
+                      {r.sublabel}
+                    </div>
+                  )
                 )}
               </td>
               {showSessions && (
