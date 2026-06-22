@@ -13,6 +13,7 @@ import { PageComments } from '@/app/_components/page-comments';
 import { GenerateNarrativeButton } from '@/app/_components/narrative-actions';
 import { HistoryPicker } from '@/app/_components/history-picker';
 import { RefreshIntelligems } from '@/app/_components/refresh-intelligems';
+import { AttachTestPicker, DetachButton } from '@/app/_components/attach-test';
 import type { ExperienceResults } from '@/lib/intelligems-api';
 import { Sparkline, type SparklineBand } from '@/app/_components/sparkline';
 import { fmt, type Format } from '@/lib/format';
@@ -556,6 +557,11 @@ export default async function PageDeepDivePage({
                           ? 'redirect destination'
                           : 'targeted here'}
                     </span>
+                    {t.manual && (
+                      <span className="inline-flex items-center gap-1 text-[10px] text-zinc-400 dark:text-zinc-500">
+                        · manually attached <DetachButton brand={brand} path={path} testId={t.id} />
+                      </span>
+                    )}
                   </div>
                   {(t.redirectsTo?.length ?? 0) > 0 && (
                     <div className="mt-1 rounded-md bg-amber-100/70 px-2 py-1 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
@@ -597,18 +603,25 @@ export default async function PageDeepDivePage({
             </ul>
             <p className="mt-2 text-[11px] text-zinc-500 dark:text-zinc-500">
               Live from Intelligems · results are <span className="font-medium">test-level</span>{' '}
-              (cohort-attributed across the whole experiment, not just this page). Template-only tests
-              aren&rsquo;t listed — Intelligems doesn&rsquo;t expose their page path via the API.
+              (cohort-attributed across the whole experiment, not just this page). Template/
+              product-targeted tests can&rsquo;t be auto-located — attach them below.
             </p>
             </>
           ) : (
             <p className="text-xs text-zinc-600 dark:text-zinc-400">
-              No Intelligems test located to this page. If you just started one, click{' '}
+              No Intelligems test auto-located to this page. If you just started one, click{' '}
               <span className="font-medium">Sync from Intelligems</span> (data caches ~30 min).
-              Note: template-type tests and tests targeted by product (rather than a URL) can&rsquo;t
-              be auto-located to a page.
+              Template-type and product-targeted tests can&rsquo;t be auto-located — attach the right
+              one below.
             </p>
           )}
+          <AttachTestPicker
+            brand={brand}
+            path={path}
+            options={data.allIntelligemsTests.filter(
+              (o) => !data.activeTests.some((t) => t.id === o.id),
+            )}
+          />
         </section>
 
         {/* Core metric cards. Sessions/Conv (ShopifyQL, current-vs-prior)

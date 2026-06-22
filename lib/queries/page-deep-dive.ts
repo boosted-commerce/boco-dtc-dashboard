@@ -15,6 +15,7 @@ import {
   type ActiveTest,
   type ExperienceResults,
 } from '@/lib/intelligems-api';
+import { getAttachedTestIds } from '@/lib/intelligems-attach';
 import type { Brand, Period, Bucket, DailyPoint } from '@/lib/queries/orders';
 import type { Promo } from '@/lib/queries/promos';
 
@@ -70,7 +71,12 @@ export type PageDeepDive = {
     redirectsTo: string[];
     // When this page is a redirect destination, which pages funnel here.
     redirectedFrom: string[];
+    // True when the team manually attached this test (not auto-located).
+    manual: boolean;
   }[];
+  // All of the brand's active tests (id/name/type) — for the "attach a
+  // test to this page" picker, including ones we can't auto-locate.
+  allIntelligemsTests: { id: string; name: string; type: string }[];
 };
 
 type OrdersRow = {
@@ -277,7 +283,7 @@ export async function getPageDeepDive(
   // Bump the version when the PageDeepDive shape changes so stale cached
   // objects (missing newer fields like activeTests) can't be served.
   return withCache(
-    `deepdive:${brand}:${period}:${encodeURIComponent(path)}:v7`,
+    `deepdive:${brand}:${period}:${encodeURIComponent(path)}:v8`,
     120,
     () => getPageDeepDiveUncached(brand, path, period),
   );
@@ -337,6 +343,18 @@ async function getPageDeepDiveUncached(
   // match drives the header pill; the full list (incl. on-site edits
   // targeting this URL) feeds the deep-dive "Active A/B tests" section.
   const onPage = matchActiveTestsForPath(igActive, path);
+  // Manually-attached tests (template/product-targeted ones the team
+  // pinned to this page) that auto-detection didn't already surface.
+  const attachedIds = await getAttachedTestIds(brand, path).catch(() => [] as string[]);
+  const onPageIds = new Set(onPage.map((t) => t.id));
+  const manualTests = attachedIds
+    .filter((id) => !onPageIds.has(id))
+    .map((id) => igActive.find((t) => t.id === id))
+    .filter((t): t is ActiveTest => Boolean(t));
+  const combined = [
+    ...onPage.map((t) => ({ t, manual: false })),
+    ...manualTests.map((t) => ({ t, manual: true })),
+  ];
   const redirectMatch = onPage.find(
     (t) => t.origins.includes(path) || t.destinations.includes(path),
   );
@@ -354,7 +372,7 @@ async function getPageDeepDiveUncached(
       }
     : null;
   const activeTests = await Promise.all(
-    onPage.map(async (t) => ({
+    combined.map(async ({ t, manual }) => ({
       id: t.id,
       name: t.name,
       type: t.type,
@@ -371,8 +389,10 @@ async function getPageDeepDiveUncached(
       redirectedFrom: t.redirects
         .filter((r) => r.destination === path)
         .map((r) => r.origin),
+      manual,
     })),
   );
+  const allIntelligemsTests = igActive.map((t) => ({ id: t.id, name: t.name, type: t.type }));
 
   return {
     brand,
@@ -394,5 +414,6 @@ async function getPageDeepDiveUncached(
     activePromos,
     intelligemsTest,
     activeTests,
+    allIntelligemsTests,
   };
 }
