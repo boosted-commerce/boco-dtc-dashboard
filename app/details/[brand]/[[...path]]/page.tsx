@@ -12,8 +12,10 @@ import { getWatchedPaths } from '@/lib/watched-store';
 import { PageComments } from '@/app/_components/page-comments';
 import { GenerateNarrativeButton } from '@/app/_components/narrative-actions';
 import { HistoryPicker } from '@/app/_components/history-picker';
+import { RefreshIntelligems } from '@/app/_components/refresh-intelligems';
+import { AttachTestPicker, DetachButton } from '@/app/_components/attach-test';
 import type { ExperienceResults } from '@/lib/intelligems-api';
-import { Sparkline } from '@/app/_components/sparkline';
+import { Sparkline, type SparklineBand } from '@/app/_components/sparkline';
 import { fmt, type Format } from '@/lib/format';
 import type { Bucket } from '@/lib/queries/orders';
 
@@ -92,11 +94,13 @@ function RichMetricCard({
   bucket,
   kind,
   sparklineColor,
+  bands,
 }: {
   title: string;
   bucket: Bucket;
   kind: Format;
   sparklineColor: string;
+  bands?: SparklineBand[];
 }) {
   const change = pctChange(bucket.current, bucket.prior);
   const sevenDayAvg = kind === 'aov' ? bucket.sevenDayTotal : bucket.sevenDayTotal / 7;
@@ -117,7 +121,7 @@ function RichMetricCard({
         )}
       </div>
       <div className={`mt-3 ${sparklineColor}`}>
-        <Sparkline points={bucket.daily} kind={kind} />
+        <Sparkline points={bucket.daily} kind={kind} bands={bands} />
       </div>
       <div className="mt-3 grid grid-cols-3 gap-2 border-t border-zinc-100 pt-2 dark:border-zinc-800">
         <Tiny label="Yesterday" value={fmt(bucket.yesterday, kind)} />
@@ -379,6 +383,14 @@ export default async function PageDeepDivePage({
         }).catch(() => null)
       : null;
 
+  // Promo windows → shaded sparkline bands (same as Layer 1). The chart
+  // clamps to the visible range, so non-overlapping promos just don't show.
+  const promoBands: SparklineBand[] = data.activePromos.map((p) => ({
+    start: p.startDate,
+    end: p.endDate,
+    label: `${p.name} · ${p.startDate} → ${p.endDate}`,
+  }));
+
   return (
     <main className="min-h-screen bg-zinc-50 px-6 py-8 dark:bg-black">
       <div className="mx-auto max-w-6xl">
@@ -511,12 +523,18 @@ export default async function PageDeepDivePage({
           </section>
         )}
 
-        {/* Active A/B tests located to this page (live from Intelligems) */}
-        {(data.activeTests?.length ?? 0) > 0 && (
-          <section className="mb-6 rounded-lg border border-amber-200 bg-amber-50/40 px-5 py-4 dark:border-amber-900/60 dark:bg-amber-950/10">
-            <div className="mb-2 text-sm font-medium text-amber-800 dark:text-amber-300">
+        {/* Active A/B tests located to this page (live from Intelligems).
+            Always rendered so the Sync button + "none detected" note show
+            even when no test is mapped to this page. */}
+        <section className="mb-6 rounded-lg border border-amber-200 bg-amber-50/40 px-5 py-4 dark:border-amber-900/60 dark:bg-amber-950/10">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <div className="text-sm font-medium text-amber-800 dark:text-amber-300">
               Active A/B tests on this page
             </div>
+            <RefreshIntelligems brand={brand} />
+          </div>
+          {(data.activeTests?.length ?? 0) > 0 ? (
+            <>
             <ul className="space-y-3">
               {data.activeTests.map((t) => (
                 <li key={t.id} className="border-t border-amber-100 pt-2 first:border-t-0 first:pt-0 dark:border-amber-900/40">
@@ -539,6 +557,11 @@ export default async function PageDeepDivePage({
                           ? 'redirect destination'
                           : 'targeted here'}
                     </span>
+                    {t.manual && (
+                      <span className="inline-flex items-center gap-1 text-[10px] text-zinc-400 dark:text-zinc-500">
+                        · manually attached <DetachButton brand={brand} path={path} testId={t.id} />
+                      </span>
+                    )}
                   </div>
                   {(t.redirectsTo?.length ?? 0) > 0 && (
                     <div className="mt-1 rounded-md bg-amber-100/70 px-2 py-1 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
@@ -580,11 +603,26 @@ export default async function PageDeepDivePage({
             </ul>
             <p className="mt-2 text-[11px] text-zinc-500 dark:text-zinc-500">
               Live from Intelligems · results are <span className="font-medium">test-level</span>{' '}
-              (cohort-attributed across the whole experiment, not just this page). Template-only tests
-              aren&rsquo;t listed — Intelligems doesn&rsquo;t expose their page path via the API.
+              (cohort-attributed across the whole experiment, not just this page). Template/
+              product-targeted tests can&rsquo;t be auto-located — attach them below.
             </p>
-          </section>
-        )}
+            </>
+          ) : (
+            <p className="text-xs text-zinc-600 dark:text-zinc-400">
+              No Intelligems test auto-located to this page. If you just started one, click{' '}
+              <span className="font-medium">Sync from Intelligems</span> (data caches ~30 min).
+              Template-type and product-targeted tests can&rsquo;t be auto-located — attach the right
+              one below.
+            </p>
+          )}
+          <AttachTestPicker
+            brand={brand}
+            path={path}
+            options={data.allIntelligemsTests.filter(
+              (o) => !data.activeTests.some((t) => t.id === o.id),
+            )}
+          />
+        </section>
 
         {/* Core metric cards. Sessions/Conv (ShopifyQL, current-vs-prior)
             on top; Orders/Revenue as full Layer-1-style cards below. */}
@@ -610,18 +648,21 @@ export default async function PageDeepDivePage({
             bucket={data.orderBucket}
             kind="count"
             sparklineColor="text-emerald-600 dark:text-emerald-400"
+            bands={promoBands}
           />
           <RichMetricCard
             title={`Revenue · ${period}d`}
             bucket={data.revenueBucket}
             kind="currency"
             sparklineColor="text-emerald-600 dark:text-emerald-400"
+            bands={promoBands}
           />
           <RichMetricCard
             title={`AOV · ${period}d`}
             bucket={deriveAovBucket(data.orderBucket, data.revenueBucket)}
             kind="aov"
             sparklineColor="text-blue-600 dark:text-blue-400"
+            bands={promoBands}
           />
           {/* Subscription revenue landed on this page (web subscription
               orders). Always shown ($0 where none), like AOV. */}
@@ -630,6 +671,7 @@ export default async function PageDeepDivePage({
             bucket={data.subRevenueBucket}
             kind="currency"
             sparklineColor="text-purple-600 dark:text-purple-400"
+            bands={promoBands}
           />
         </section>
 
