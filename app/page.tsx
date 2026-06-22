@@ -746,6 +746,7 @@ function Layer2Table({
   showSessions,
   showRevenue,
   igTests,
+  bands,
 }: {
   rows: Layer2Row[];
   metricNoun: 'orders' | 'units' | 'orders attributed';
@@ -758,6 +759,7 @@ function Layer2Table({
   showSessions: boolean;
   showRevenue: boolean;
   igTests: IntelligemsTest[];
+  bands?: SparklineBand[];
 }) {
   if (rows.length === 0) {
     return (
@@ -950,7 +952,7 @@ function Layer2Table({
               {showRevenue && (
                 <td className="px-5 py-3">
                   <div className="w-32 text-emerald-600 dark:text-emerald-400">
-                    <Sparkline points={r.daily} kind="currency" height={28} showPeak={false} />
+                    <Sparkline points={r.daily} kind="currency" height={28} showPeak={false} bands={bands} />
                   </div>
                 </td>
               )}
@@ -1414,6 +1416,7 @@ export default async function Home({
               showSessions={starrableTabs.has(tab) || tab === 'attribution'}
               showRevenue={tab !== 'attribution'}
               igTests={igTests}
+              bands={sparkBands}
             />
           </div>
           {layer2Rows.length > COLLAPSED_ROWS && (
