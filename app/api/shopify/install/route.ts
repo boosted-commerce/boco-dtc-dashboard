@@ -6,8 +6,10 @@ import { buildAuthorizeUrl, normalizeShopDomain } from '@/lib/shopify-oauth';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// Required scopes for ShopifyQL Analytics + order/report reads.
-const SCOPES = 'read_analytics,read_orders,read_reports';
+// Required scopes for ShopifyQL Analytics + order/report reads, plus
+// product/content reads for exact storefront page titles. Adding scopes
+// requires re-installing (re-auth) each brand to grant them.
+const SCOPES = 'read_analytics,read_orders,read_reports,read_products,read_content';
 
 // State cookie carries the brand identifier so the callback can associate
 // the issued token with the right brand. The HMAC over the nonce + brand

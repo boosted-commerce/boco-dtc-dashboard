@@ -24,6 +24,7 @@ import {
   type Layer2Tab,
 } from '@/lib/queries/layer2';
 import { getWatchedPaths, getHiddenEntries } from '@/lib/watched-store';
+import { getPageTitles } from '@/lib/shopify';
 import { getActivePromos, getPromosInWindow, type Promo } from '@/lib/queries/promos';
 import { getNorthbeamSummary, type NorthbeamSummary } from '@/lib/queries/northbeam';
 import { getNarrative } from '@/lib/queries/narrative';
@@ -800,8 +801,10 @@ function Layer2Table({
   sortKey,
   sortDir,
   hrefForSort,
+  titles,
 }: {
   rows: Layer2Row[];
+  titles: Record<string, string>;
   metricNoun: 'orders' | 'units' | 'orders attributed';
   emptyMessage: string;
   period: Period;
@@ -907,7 +910,7 @@ function Layer2Table({
                       className="group inline-flex max-w-full items-center gap-1 truncate font-medium text-sky-700 underline decoration-sky-200 decoration-1 underline-offset-2 hover:decoration-sky-500 dark:text-sky-400 dark:decoration-sky-900 dark:hover:decoration-sky-500"
                       title="Open page deep-dive"
                     >
-                      <span className="truncate">{prettyTitleFromPath(r.key)}</span>
+                      <span className="truncate">{titles[r.key] ?? prettyTitleFromPath(r.key)}</span>
                       <span
                         className="shrink-0 text-xs text-sky-400 transition group-hover:translate-x-0.5 group-hover:text-sky-700 dark:text-sky-600 dark:group-hover:text-sky-400"
                         aria-hidden="true"
@@ -1268,6 +1271,12 @@ export default async function Home({
     if (expanded) params.set('expanded', 'true');
     return `/?${params.toString()}`;
   };
+  const displayedLayer2Rows = expanded ? sortedLayer2Rows : sortedLayer2Rows.slice(0, COLLAPSED_ROWS);
+  // Exact storefront titles for the displayed path rows (falls back to a
+  // slug-derived title where not resolvable / scope not yet granted).
+  const layer2Titles = starrableTabs.has(tab)
+    ? await getPageTitles(brand, displayedLayer2Rows.map((r) => r.key)).catch(() => ({} as Record<string, string>))
+    : {};
 
   return (
     <main className="min-h-screen bg-zinc-50 px-6 py-10 dark:bg-black">
@@ -1520,7 +1529,8 @@ export default async function Home({
               section while the tabs + footnote stay put */}
           <div className="overflow-x-auto">
             <Layer2Table
-              rows={expanded ? sortedLayer2Rows : sortedLayer2Rows.slice(0, COLLAPSED_ROWS)}
+              rows={displayedLayer2Rows}
+              titles={layer2Titles}
               metricNoun={metricNounByTab[tab]}
               emptyMessage={`No ${LAYER2_LABELS[tab].toLowerCase()} data in this period for ${brand}.`}
               period={period}

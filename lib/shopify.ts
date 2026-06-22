@@ -1,5 +1,6 @@
 import { getShopifyCredentials } from '@/lib/watched-store';
 import { SHOPIFY_API_VERSION } from '@/lib/shopify-oauth';
+import { withCache } from '@/lib/cache';
 import type { Brand, Period } from '@/lib/queries/orders';
 
 // ShopifyQL client. Reads per-brand OAuth tokens from KV (populated by
@@ -268,6 +269,52 @@ export async function getTodaySessions(brand: Brand): Promise<TodaySessions | nu
   const sessions = Number(row.sessions) || 0;
   const convRate = (Number(row.conversion_rate) || 0) * 100;
   return { sessions, convRate };
+}
+
+// --- Exact storefront page titles ------------------------------------
+// Resolve a landing path → its real Shopify title (product/collection/
+// page), so Layer 2 can show "Copper Peptides Serum" instead of a slug.
+// Requires read_products + read_content scopes (re-auth). Returns null on
+// missing scope / not found → caller falls back to a slug-derived title.
+
+async function fetchTitleForPath(brand: Brand, path: string): Promise<string | null> {
+  const segs = path.split('?')[0].split('/').filter(Boolean);
+  if (segs.length < 2) return null;
+  const type = segs[0];
+  const handle = segs[segs.length - 1];
+  const field =
+    type === 'products' ? 'products' : type === 'collections' ? 'collections' : type === 'pages' ? 'pages' : null;
+  if (!field) return null;
+  const data = await runAdminGraphQL(
+    brand,
+    `query($q:String!){ ${field}(first:1, query:$q){ nodes{ title } } }`,
+    { q: `handle:${handle}` },
+  );
+  const conn = data?.[field] as { nodes?: Array<{ title?: string }> } | undefined;
+  return conn?.nodes?.[0]?.title ?? null;
+}
+
+// Map of path → exact title for the given paths. Cached 7 days per path
+// (titles rarely change); unresolved paths are simply omitted.
+export async function getPageTitles(
+  brand: Brand,
+  paths: string[],
+): Promise<Record<string, string>> {
+  const uniq = [...new Set(paths)];
+  const entries = await Promise.all(
+    uniq.map(async (p) => {
+      if (p === '/') return [p, 'Home'] as const;
+      const title = await withCache(
+        `title:${brand}:${encodeURIComponent(p)}:v1`,
+        7 * 24 * 60 * 60,
+        () => fetchTitleForPath(brand, p),
+      ).catch(() => null);
+      return [p, title] as const;
+    }),
+  );
+  const out: Record<string, string> = {};
+  for (const [p, t] of entries) if (t) out[p] = t;
+  return out;
 }
 
 // Strip protocol + host + query string + fragment so a ShopifyQL
