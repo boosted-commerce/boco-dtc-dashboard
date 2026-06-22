@@ -14,7 +14,7 @@ import { GenerateNarrativeButton } from '@/app/_components/narrative-actions';
 import { HistoryPicker } from '@/app/_components/history-picker';
 import { RefreshIntelligems } from '@/app/_components/refresh-intelligems';
 import type { ExperienceResults } from '@/lib/intelligems-api';
-import { Sparkline } from '@/app/_components/sparkline';
+import { Sparkline, type SparklineBand } from '@/app/_components/sparkline';
 import { fmt, type Format } from '@/lib/format';
 import type { Bucket } from '@/lib/queries/orders';
 
@@ -93,11 +93,13 @@ function RichMetricCard({
   bucket,
   kind,
   sparklineColor,
+  bands,
 }: {
   title: string;
   bucket: Bucket;
   kind: Format;
   sparklineColor: string;
+  bands?: SparklineBand[];
 }) {
   const change = pctChange(bucket.current, bucket.prior);
   const sevenDayAvg = kind === 'aov' ? bucket.sevenDayTotal : bucket.sevenDayTotal / 7;
@@ -118,7 +120,7 @@ function RichMetricCard({
         )}
       </div>
       <div className={`mt-3 ${sparklineColor}`}>
-        <Sparkline points={bucket.daily} kind={kind} />
+        <Sparkline points={bucket.daily} kind={kind} bands={bands} />
       </div>
       <div className="mt-3 grid grid-cols-3 gap-2 border-t border-zinc-100 pt-2 dark:border-zinc-800">
         <Tiny label="Yesterday" value={fmt(bucket.yesterday, kind)} />
@@ -380,6 +382,14 @@ export default async function PageDeepDivePage({
         }).catch(() => null)
       : null;
 
+  // Promo windows → shaded sparkline bands (same as Layer 1). The chart
+  // clamps to the visible range, so non-overlapping promos just don't show.
+  const promoBands: SparklineBand[] = data.activePromos.map((p) => ({
+    start: p.startDate,
+    end: p.endDate,
+    label: `${p.name} · ${p.startDate} → ${p.endDate}`,
+  }));
+
   return (
     <main className="min-h-screen bg-zinc-50 px-6 py-8 dark:bg-black">
       <div className="mx-auto max-w-6xl">
@@ -625,18 +635,21 @@ export default async function PageDeepDivePage({
             bucket={data.orderBucket}
             kind="count"
             sparklineColor="text-emerald-600 dark:text-emerald-400"
+            bands={promoBands}
           />
           <RichMetricCard
             title={`Revenue · ${period}d`}
             bucket={data.revenueBucket}
             kind="currency"
             sparklineColor="text-emerald-600 dark:text-emerald-400"
+            bands={promoBands}
           />
           <RichMetricCard
             title={`AOV · ${period}d`}
             bucket={deriveAovBucket(data.orderBucket, data.revenueBucket)}
             kind="aov"
             sparklineColor="text-blue-600 dark:text-blue-400"
+            bands={promoBands}
           />
           {/* Subscription revenue landed on this page (web subscription
               orders). Always shown ($0 where none), like AOV. */}
@@ -645,6 +658,7 @@ export default async function PageDeepDivePage({
             bucket={data.subRevenueBucket}
             kind="currency"
             sparklineColor="text-purple-600 dark:text-purple-400"
+            bands={promoBands}
           />
         </section>
 
