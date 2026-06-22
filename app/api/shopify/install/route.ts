@@ -2,6 +2,7 @@ import { type NextRequest } from 'next/server';
 import crypto from 'node:crypto';
 import { BRANDS, type Brand } from '@/lib/queries/orders';
 import { buildAuthorizeUrl, normalizeShopDomain } from '@/lib/shopify-oauth';
+import { getShopifyCredentials } from '@/lib/watched-store';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -39,10 +40,17 @@ export async function GET(request: NextRequest) {
     }
     const brand = brandRaw as Brand;
 
-    const shop = normalizeShopDomain(shopRaw);
+    // Re-auth convenience: if ?shop is omitted, reuse the brand's
+    // already-connected shop so re-installing (e.g. for new scopes) is
+    // just /api/shopify/install?brand=VIV.
+    let shop = normalizeShopDomain(shopRaw);
+    if (!shop) {
+      const creds = await getShopifyCredentials(brand).catch(() => null);
+      if (creds?.shop) shop = normalizeShopDomain(creds.shop);
+    }
     if (!shop) {
       return Response.json(
-        { error: 'shop must be a valid myshopify.com subdomain' },
+        { error: 'shop must be a valid myshopify.com subdomain (pass ?shop= or connect the brand first)' },
         { status: 400 },
       );
     }
