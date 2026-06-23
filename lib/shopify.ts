@@ -287,11 +287,16 @@ async function fetchTitleForPath(brand: Brand, path: string): Promise<string | n
   if (!field) return null;
   const data = await runAdminGraphQL(
     brand,
-    `query($q:String!){ ${field}(first:1, query:$q){ nodes{ title } } }`,
+    `query($q:String!){ ${field}(first:1, query:$q){ nodes{ title handle } } }`,
     { q: `handle:${handle}` },
   );
-  const conn = data?.[field] as { nodes?: Array<{ title?: string }> } | undefined;
-  return conn?.nodes?.[0]?.title ?? null;
+  const conn = data?.[field] as { nodes?: Array<{ title?: string; handle?: string }> } | undefined;
+  const node = conn?.nodes?.[0];
+  // Only trust the title when the matched record's handle is exactly the
+  // one we asked for — Shopify's search can fuzzy-match, and we don't want
+  // a neighbouring page's title (e.g. "…-plus" vs "…-plus-01").
+  if (!node || node.handle !== handle) return null;
+  return node.title ?? null;
 }
 
 // Map of path → exact title for the given paths. Cached 7 days per path
@@ -305,7 +310,7 @@ export async function getPageTitles(
     uniq.map(async (p) => {
       if (p === '/') return [p, 'Home'] as const;
       const title = await withCache(
-        `title:${brand}:${encodeURIComponent(p)}:v1`,
+        `title:${brand}:${encodeURIComponent(p)}:v2`,
         7 * 24 * 60 * 60,
         () => fetchTitleForPath(brand, p),
       ).catch(() => null);
