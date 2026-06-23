@@ -24,6 +24,7 @@ import {
   type Layer2Tab,
 } from '@/lib/queries/layer2';
 import { getWatchedPaths, getHiddenEntries } from '@/lib/watched-store';
+import { getPageTitles } from '@/lib/shopify';
 import { getActivePromos, getPromosInWindow, type Promo } from '@/lib/queries/promos';
 import { getNorthbeamSummary, type NorthbeamSummary } from '@/lib/queries/northbeam';
 import { getNarrative } from '@/lib/queries/narrative';
@@ -74,6 +75,19 @@ function promosToBands(promos: Promo[]): SparklineBand[] {
     end: p.endDate,
     label: `${p.name} · ${p.startDate} → ${p.endDate}`,
   }));
+}
+
+// Derive a human-readable title from a URL path's last slug, for the
+// Layer 2 page rows (friendlier than the raw URL). Not the literal
+// Shopify title — a cleaned-up version of the handle.
+function prettyTitleFromPath(path: string): string {
+  if (!path || path === '/') return 'Home';
+  const seg = path.split('?')[0].split('/').filter(Boolean).pop() ?? '';
+  if (!seg) return 'Home';
+  return seg
+    .replace(/[-_]+/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+    .trim();
 }
 
 function ChangeChip({
@@ -734,6 +748,43 @@ function trendTagFor(current: number, prior: number) {
   };
 }
 
+// Sort keys for the Layer 2 numeric columns.
+type Layer2SortKey = 'sessions' | 'checkout' | 'orderRate' | 'count' | 'sub' | 'revenue' | 'vsPrior';
+
+// Clickable column header — links to the same view sorted by `col`,
+// toggling asc/desc, with a ▲/▼ indicator (faint ↕ when inactive).
+function SortTh({
+  label,
+  col,
+  sortKey,
+  sortDir,
+  hrefForSort,
+  title,
+}: {
+  label: string;
+  col: Layer2SortKey;
+  sortKey: Layer2SortKey | '';
+  sortDir: 'asc' | 'desc';
+  hrefForSort: (col: Layer2SortKey) => string;
+  title?: string;
+}) {
+  const active = sortKey === col;
+  return (
+    <th className="px-5 py-2 text-right font-medium" title={title}>
+      <Link
+        href={hrefForSort(col)}
+        scroll={false}
+        className={`inline-flex items-center gap-1 hover:text-zinc-900 dark:hover:text-zinc-100 ${
+          active ? 'text-zinc-900 dark:text-zinc-100' : ''
+        }`}
+      >
+        {label}
+        <span className="text-[9px] opacity-70">{active ? (sortDir === 'asc' ? '▲' : '▼') : '↕'}</span>
+      </Link>
+    </th>
+  );
+}
+
 function Layer2Table({
   rows,
   metricNoun,
@@ -747,8 +798,13 @@ function Layer2Table({
   showRevenue,
   igTests,
   bands,
+  sortKey,
+  sortDir,
+  hrefForSort,
+  titles,
 }: {
   rows: Layer2Row[];
+  titles: Record<string, string>;
   metricNoun: 'orders' | 'units' | 'orders attributed';
   emptyMessage: string;
   period: Period;
@@ -760,6 +816,9 @@ function Layer2Table({
   showRevenue: boolean;
   igTests: IntelligemsTest[];
   bands?: SparklineBand[];
+  sortKey: Layer2SortKey | '';
+  sortDir: 'asc' | 'desc';
+  hrefForSort: (col: Layer2SortKey) => string;
 }) {
   if (rows.length === 0) {
     return (
@@ -772,27 +831,37 @@ function Layer2Table({
         <tr>
           {starrable && <th className="w-10 px-3 py-2 font-medium" aria-label="Star" />}
           <th className="px-5 py-2 font-medium">Name</th>
-          {showSessions && <th className="px-5 py-2 text-right font-medium">Sessions</th>}
           {showSessions && (
-            <th
-              className="px-5 py-2 text-right font-medium"
+            <SortTh label="Sessions" col="sessions" sortKey={sortKey} sortDir={sortDir} hrefForSort={hrefForSort} />
+          )}
+          {showSessions && (
+            <SortTh
+              label="Checkout rate"
+              col="checkout"
+              sortKey={sortKey}
+              sortDir={sortDir}
+              hrefForSort={hrefForSort}
               title="% of sessions that reached the checkout step (Shopify metric — not the same as completed orders)"
-            >
-              Checkout rate
-            </th>
+            />
           )}
           {showSessions && (
-            <th
-              className="px-5 py-2 text-right font-medium"
+            <SortTh
+              label="Order rate"
+              col="orderRate"
+              sortKey={sortKey}
+              sortDir={sortDir}
+              hrefForSort={hrefForSort}
               title="Completed orders ÷ sessions (our calculation from Snowflake). Differs from Checkout rate when customers reach checkout but don't pay, or when orders attribute to a different first-touch page."
-            >
-              Order rate
-            </th>
+            />
           )}
-          <th className="px-5 py-2 text-right font-medium">{metricNoun}</th>
-          {showRevenue && <th className="px-5 py-2 text-right font-medium">Sub</th>}
-          {showRevenue && <th className="px-5 py-2 text-right font-medium">Revenue</th>}
-          <th className="px-5 py-2 text-right font-medium">vs prior</th>
+          <SortTh label={metricNoun} col="count" sortKey={sortKey} sortDir={sortDir} hrefForSort={hrefForSort} />
+          {showRevenue && (
+            <SortTh label="Sub" col="sub" sortKey={sortKey} sortDir={sortDir} hrefForSort={hrefForSort} />
+          )}
+          {showRevenue && (
+            <SortTh label="Revenue" col="revenue" sortKey={sortKey} sortDir={sortDir} hrefForSort={hrefForSort} />
+          )}
+          <SortTh label="vs prior" col="vsPrior" sortKey={sortKey} sortDir={sortDir} hrefForSort={hrefForSort} />
           {showRevenue && (
             <th className="px-5 py-2 font-medium">{period}-day trend</th>
           )}
@@ -841,7 +910,7 @@ function Layer2Table({
                       className="group inline-flex max-w-full items-center gap-1 truncate font-medium text-sky-700 underline decoration-sky-200 decoration-1 underline-offset-2 hover:decoration-sky-500 dark:text-sky-400 dark:decoration-sky-900 dark:hover:decoration-sky-500"
                       title="Open page deep-dive"
                     >
-                      <span className="truncate">{r.label}</span>
+                      <span className="truncate">{titles[r.key] ?? prettyTitleFromPath(r.key)}</span>
                       <span
                         className="shrink-0 text-xs text-sky-400 transition group-hover:translate-x-0.5 group-hover:text-sky-700 dark:text-sky-600 dark:group-hover:text-sky-400"
                         aria-hidden="true"
@@ -901,10 +970,16 @@ function Layer2Table({
                     hideable && <HideButton brand={brand} path={r.key} />
                   )}
                 </div>
-                {r.sublabel && (
-                  <div className="truncate text-xs text-zinc-500 dark:text-zinc-400">
-                    {r.sublabel}
+                {starrable ? (
+                  <div className="truncate font-mono text-[11px] text-zinc-400 dark:text-zinc-500">
+                    {r.key}
                   </div>
+                ) : (
+                  r.sublabel && (
+                    <div className="truncate text-xs text-zinc-500 dark:text-zinc-400">
+                      {r.sublabel}
+                    </div>
+                  )
                 )}
               </td>
               {showSessions && (
@@ -1070,6 +1145,8 @@ export default async function Home({
     tab?: string;
     source?: string;
     expanded?: string;
+    sort?: string;
+    dir?: string;
   }>;
 }) {
   const sp = await searchParams;
@@ -1078,6 +1155,11 @@ export default async function Home({
   const tab = parseLayer2Tab(sp.tab);
   const source = parseSource(sp.source);
   const expanded = sp.expanded === 'true';
+  const SORT_KEYS = ['sessions', 'checkout', 'orderRate', 'count', 'sub', 'revenue', 'vsPrior'] as const;
+  const sortKey = (SORT_KEYS as readonly string[]).includes(sp.sort ?? '')
+    ? (sp.sort as Layer2SortKey)
+    : '';
+  const sortDir: 'asc' | 'desc' = sp.dir === 'asc' ? 'asc' : 'desc';
   const [
     data,
     layer2Rows,
@@ -1153,6 +1235,48 @@ export default async function Home({
     attribution: 'sources',
   };
   const COLLAPSED_ROWS = 10;
+
+  // Server-side column sort for the Layer 2 table. Default (no sort param)
+  // keeps the query's revenue-desc order.
+  const showRev = tab !== 'attribution';
+  const sortVal = (r: Layer2Row, key: Layer2SortKey): number => {
+    switch (key) {
+      case 'sessions':
+        return r.sessions ?? 0;
+      case 'checkout':
+        return r.convRate ?? 0;
+      case 'orderRate':
+        return r.sessions && r.sessions > 0 ? r.currentCount / r.sessions : 0;
+      case 'count':
+        return r.currentCount;
+      case 'sub':
+        return r.subCount ?? 0;
+      case 'revenue':
+        return r.currentRevenue;
+      case 'vsPrior': {
+        const cur = showRev ? r.currentRevenue : r.sessions ?? 0;
+        const pri = showRev ? r.priorRevenue : r.priorSessions ?? 0;
+        return pctChange(cur, pri) ?? -Infinity;
+      }
+    }
+  };
+  const sortedLayer2Rows = sortKey
+    ? [...layer2Rows].sort((a, b) =>
+        sortDir === 'asc' ? sortVal(a, sortKey) - sortVal(b, sortKey) : sortVal(b, sortKey) - sortVal(a, sortKey),
+      )
+    : layer2Rows;
+  const hrefForSort = (col: Layer2SortKey): string => {
+    const nextDir = col === sortKey && sortDir === 'desc' ? 'asc' : 'desc';
+    const params = new URLSearchParams({ brand, period: String(period), tab, source, sort: col, dir: nextDir });
+    if (expanded) params.set('expanded', 'true');
+    return `/?${params.toString()}`;
+  };
+  const displayedLayer2Rows = expanded ? sortedLayer2Rows : sortedLayer2Rows.slice(0, COLLAPSED_ROWS);
+  // Exact storefront titles for the displayed path rows (falls back to a
+  // slug-derived title where not resolvable / scope not yet granted).
+  const layer2Titles = starrableTabs.has(tab)
+    ? await getPageTitles(brand, displayedLayer2Rows.map((r) => r.key)).catch(() => ({} as Record<string, string>))
+    : {};
 
   return (
     <main className="min-h-screen bg-zinc-50 px-6 py-10 dark:bg-black">
@@ -1405,7 +1529,8 @@ export default async function Home({
               section while the tabs + footnote stay put */}
           <div className="overflow-x-auto">
             <Layer2Table
-              rows={expanded ? layer2Rows : layer2Rows.slice(0, COLLAPSED_ROWS)}
+              rows={displayedLayer2Rows}
+              titles={layer2Titles}
               metricNoun={metricNounByTab[tab]}
               emptyMessage={`No ${LAYER2_LABELS[tab].toLowerCase()} data in this period for ${brand}.`}
               period={period}
@@ -1417,12 +1542,15 @@ export default async function Home({
               showRevenue={tab !== 'attribution'}
               igTests={igTests}
               bands={sparkBands}
+              sortKey={sortKey}
+              sortDir={sortDir}
+              hrefForSort={hrefForSort}
             />
           </div>
           {layer2Rows.length > COLLAPSED_ROWS && (
             <div className="flex justify-center border-t border-zinc-100 bg-zinc-50/50 px-5 py-3 dark:border-zinc-800 dark:bg-zinc-900/30">
               <Link
-                href={`/?brand=${brand}&period=${period}&tab=${tab}&source=${source}${expanded ? '' : '&expanded=true'}`}
+                href={`/?brand=${brand}&period=${period}&tab=${tab}&source=${source}${sortKey ? `&sort=${sortKey}&dir=${sortDir}` : ''}${expanded ? '' : '&expanded=true'}`}
                 scroll={false}
                 className="text-xs font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
               >
