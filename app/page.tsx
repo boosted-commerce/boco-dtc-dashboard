@@ -90,6 +90,43 @@ function prettyTitleFromPath(path: string): string {
     .trim();
 }
 
+// When several displayed rows resolve to the SAME title (common with A/B
+// split-URL pages, e.g. "…-plus" and "…-plus-01" both titled the same),
+// append the distinguishing tail of each URL so the titles read uniquely.
+function disambiguateTitles(
+  rows: Layer2Row[],
+  titleMap: Record<string, string>,
+): Record<string, string> {
+  const base = (key: string) => titleMap[key] ?? prettyTitleFromPath(key);
+  const lastSeg = (p: string) => p.split('?')[0].split('/').filter(Boolean).pop() ?? p;
+  const groups = new Map<string, string[]>();
+  for (const r of rows) {
+    const t = base(r.key);
+    const arr = groups.get(t);
+    if (arr) arr.push(r.key);
+    else groups.set(t, [r.key]);
+  }
+  const out: Record<string, string> = {};
+  for (const [t, paths] of groups) {
+    if (paths.length < 2) {
+      out[paths[0]] = t;
+      continue;
+    }
+    const segs = paths.map(lastSeg);
+    let prefix = segs[0];
+    for (const s of segs) {
+      let i = 0;
+      while (i < prefix.length && i < s.length && prefix[i] === s[i]) i++;
+      prefix = prefix.slice(0, i);
+    }
+    for (const p of paths) {
+      const rem = lastSeg(p).slice(prefix.length).replace(/^[-_]+/, '');
+      out[p] = `${t} (${rem || 'main'})`;
+    }
+  }
+  return out;
+}
+
 function ChangeChip({
   current,
   prior,
@@ -1277,6 +1314,10 @@ export default async function Home({
   const layer2Titles = starrableTabs.has(tab)
     ? await getPageTitles(brand, displayedLayer2Rows.map((r) => r.key)).catch(() => ({} as Record<string, string>))
     : {};
+  // Make same-title rows read uniquely (appends the distinguishing URL tail).
+  const layer2DisplayTitles = starrableTabs.has(tab)
+    ? disambiguateTitles(displayedLayer2Rows, layer2Titles)
+    : {};
 
   return (
     <main className="min-h-screen bg-zinc-50 px-6 py-10 dark:bg-black">
@@ -1530,7 +1571,7 @@ export default async function Home({
           <div className="overflow-x-auto">
             <Layer2Table
               rows={displayedLayer2Rows}
-              titles={layer2Titles}
+              titles={layer2DisplayTitles}
               metricNoun={metricNounByTab[tab]}
               emptyMessage={`No ${LAYER2_LABELS[tab].toLowerCase()} data in this period for ${brand}.`}
               period={period}
