@@ -830,7 +830,8 @@ function Layer2Table({
       <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wider text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
         <tr>
           {starrable && <th className="w-10 px-3 py-2 font-medium" aria-label="Star" />}
-          <th className="px-5 py-2 font-medium">Name</th>
+          <th className="px-5 py-2 font-medium">{starrable ? 'Page' : 'Name'}</th>
+          {starrable && <th className="px-5 py-2 font-medium">URL</th>}
           {showSessions && (
             <SortTh label="Sessions" col="sessions" sortKey={sortKey} sortDir={sortDir} hrefForSort={hrefForSort} />
           )}
@@ -970,18 +971,17 @@ function Layer2Table({
                     hideable && <HideButton brand={brand} path={r.key} />
                   )}
                 </div>
-                {starrable ? (
-                  <div className="truncate font-mono text-[11px] text-zinc-400 dark:text-zinc-500">
-                    {r.key}
+                {!starrable && r.sublabel && (
+                  <div className="truncate text-xs text-zinc-500 dark:text-zinc-400">
+                    {r.sublabel}
                   </div>
-                ) : (
-                  r.sublabel && (
-                    <div className="truncate text-xs text-zinc-500 dark:text-zinc-400">
-                      {r.sublabel}
-                    </div>
-                  )
                 )}
               </td>
+              {starrable && (
+                <td className="max-w-[200px] truncate px-5 py-3 font-mono text-[11px] text-zinc-400 dark:text-zinc-500">
+                  <span title={r.key}>{r.key}</span>
+                </td>
+              )}
               {showSessions && (
                 <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
                   {r.sessions !== undefined
