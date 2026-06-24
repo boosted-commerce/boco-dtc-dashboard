@@ -393,7 +393,7 @@ async function getChannelMix(brand: Brand, period: Period): Promise<ChannelMix> 
 // Compute a Bucket from a daily SessionDailyPoint series. The window
 // boundaries match the calendar-day pattern used for every other Bucket:
 // current ends at start-of-today (excludes in-progress today).
-function bucketFromTimeSeries(
+export function bucketFromTimeSeries(
   series: SessionDailyPoint[],
   period: Period,
   metric: 'sessions' | 'convRate',

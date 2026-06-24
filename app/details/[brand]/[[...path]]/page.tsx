@@ -47,37 +47,6 @@ function pctChange(current: number, prior: number): { arrow: '↑' | '↓' | '�
   return { arrow, text: `${display}%`, color };
 }
 
-function MetricCard({
-  title,
-  value,
-  current,
-  prior,
-  label,
-}: {
-  title: string;
-  value: string;
-  current: number;
-  prior: number;
-  label: string;
-}) {
-  const change = pctChange(current, prior);
-  return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
-      <div className="text-[11px] uppercase tracking-wider text-zinc-500 dark:text-zinc-400">{title}</div>
-      <div className="mt-2 text-2xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">{value}</div>
-      <div className="mt-1 text-xs">
-        {change ? (
-          <span className={`font-medium ${change.color}`}>
-            {change.arrow} {change.text} <span className="text-zinc-500 dark:text-zinc-400">{label}</span>
-          </span>
-        ) : (
-          <span className="text-zinc-400 dark:text-zinc-500">new (no prior comparison)</span>
-        )}
-      </div>
-    </div>
-  );
-}
-
 function Tiny({ label, value }: { label: string; value: string }) {
   return (
     <div>
@@ -624,22 +593,21 @@ export default async function PageDeepDivePage({
           />
         </section>
 
-        {/* Core metric cards. Sessions/Conv (ShopifyQL, current-vs-prior)
-            on top; Orders/Revenue as full Layer-1-style cards below. */}
-        <section className="mb-3 grid grid-cols-2 gap-3">
-          <MetricCard
+        {/* Core metric cards — all full Layer-1-style rich cards. */}
+        <section className="mb-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+          <RichMetricCard
             title={`Sessions · ${period}d`}
-            value={fmtCount(data.sessions.current)}
-            current={data.sessions.current}
-            prior={data.sessions.prior}
-            label="vs prior"
+            bucket={data.sessionsBucket}
+            kind="count"
+            sparklineColor="text-sky-600 dark:text-sky-400"
+            bands={promoBands}
           />
-          <MetricCard
+          <RichMetricCard
             title={`Conv rate · ${period}d`}
-            value={fmtPct(data.convRate.current)}
-            current={data.convRate.current}
-            prior={data.convRate.prior}
-            label="vs prior (same-session)"
+            bucket={data.convRateBucket}
+            kind="percent"
+            sparklineColor="text-sky-600 dark:text-sky-400"
+            bands={promoBands}
           />
         </section>
         <section className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-2">
