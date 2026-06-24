@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
          ORDER BY o.CREATED_AT DESC
          LIMIT 3
        )
-       SELECT OBJECT_CONSTRUCT(*) AS ROW FROM x`,
+       SELECT OBJECT_CONSTRUCT(*) AS OBJ FROM x`,
       [brand],
     );
     return Response.json({ brand, sample: rows });
