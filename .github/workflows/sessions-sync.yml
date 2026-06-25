@@ -1,0 +1,39 @@
+name: sessions-sync
+
+on:
+  schedule:
+    # Daily at 15:00 UTC — after promos (13:00) and Northbeam (14:00) so
+    # they don't contend for the warehouse.
+    - cron: '0 15 * * *'
+  workflow_dispatch:
+    inputs:
+      days_back:
+        description: 'Days back to fetch (default 1; use a large number once for backfill, e.g. 395)'
+        required: false
+        default: '1'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: node scripts/sync-sessions.mjs
+        env:
+          SESSIONS_SYNC_DAYS_BACK: ${{ inputs.days_back || '1' }}
+
+          # Shopify OAuth tokens live in Upstash Redis (same store the app uses).
+          UPSTASH_REDIS_REST_URL:   ${{ secrets.UPSTASH_REDIS_REST_URL }}
+          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+
+          SNOWFLAKE_ACCOUNT:   ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER:      ${{ secrets.SNOWFLAKE_USERNAME }}
+          SNOWFLAKE_PASSWORD:  ${{ secrets.SNOWFLAKE_PASSWORD }}
+          SNOWFLAKE_ROLE:      ${{ secrets.SNOWFLAKE_ROLE }}
+          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+          SNOWFLAKE_DATABASE:  ${{ secrets.SNOWFLAKE_DATABASE }}
