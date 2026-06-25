@@ -4,6 +4,7 @@ import type { Brand, DailyPoint, Period } from '@/lib/queries/orders';
 import { getWatchedPaths, getHiddenPaths, getPinnedPaths, getLPPaths } from '@/lib/watched-store';
 import { getChannelSessions, getSessionsByPath } from '@/lib/shopify';
 import { getActiveTests } from '@/lib/intelligems-api';
+import { getAllAttachedPaths } from '@/lib/intelligems-attach';
 
 // Layer 2 — page-/product-/source-level tables below Level 1. Each function
 // returns the top N rows for the selected period with a daily-revenue series
@@ -288,20 +289,31 @@ export async function getLandingPages(brand: Brand, period: Period): Promise<Lay
   return getRowsForPaths(brand, period, await getLPPaths(brand));
 }
 
-// Pages currently involved in an active Intelligems test (redirect origins
-// & destinations + on-site-edit URL targets), auto-listed. Each row's
-// sublabel names the test(s) touching that path.
+// Pages involved in an Intelligems test — auto-located (redirect origins &
+// destinations + on-site-edit URL targets) PLUS pages the team manually
+// attached a test to via a deep-dive dropdown. Each row's sublabel names the
+// test(s) touching that path.
 export async function getABTestPages(brand: Brand, period: Period): Promise<Layer2Row[]> {
-  const tests = await getActiveTests(brand).catch(() => []);
+  const [tests, manual] = await Promise.all([
+    getActiveTests(brand).catch(() => []),
+    getAllAttachedPaths(brand).catch(() => ({} as Record<string, string[]>)),
+  ]);
   // path -> set of test names touching it
   const byPath = new Map<string, Set<string>>();
+  const addName = (p: string, name: string) => {
+    if (!p) return;
+    const set = byPath.get(p) ?? new Set<string>();
+    set.add(name);
+    byPath.set(p, set);
+  };
   for (const t of tests) {
-    for (const p of [...t.origins, ...t.destinations, ...t.targetPaths]) {
-      if (!p) continue;
-      const set = byPath.get(p) ?? new Set<string>();
-      set.add(t.name);
-      byPath.set(p, set);
-    }
+    for (const p of [...t.origins, ...t.destinations, ...t.targetPaths]) addName(p, t.name);
+  }
+  // Manual attachments — resolve the test name from active tests where we
+  // can; otherwise label generically (e.g. token missing or test ended).
+  const idToName = new Map(tests.map((t) => [t.id, t.name]));
+  for (const [path, ids] of Object.entries(manual)) {
+    for (const id of ids) addName(path, idToName.get(id) ?? 'Attached test');
   }
   if (byPath.size === 0) return [];
   const rows = await getRowsForPaths(brand, period, [...byPath.keys()]);

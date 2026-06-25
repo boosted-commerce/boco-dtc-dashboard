@@ -42,6 +42,36 @@ export async function getAttachedTestIds(brand: Brand, path: string): Promise<st
   }
 }
 
+// All manual attachments for a brand: path → attached test ids. Used by the
+// Layer 2 A/B Tests tab to surface pages that have a test pinned to them even
+// when it can't be auto-located by URL.
+export async function getAllAttachedPaths(brand: Brand): Promise<Record<string, string[]>> {
+  const redis = getRedis();
+  if (!redis) return {};
+  try {
+    const raw = await redis.hgetall<Record<string, string[] | string>>(key(brand));
+    if (!raw) return {};
+    const out: Record<string, string[]> = {};
+    for (const [path, val] of Object.entries(raw)) {
+      const ids = Array.isArray(val)
+        ? val
+        : (() => {
+            try {
+              const p = JSON.parse(val as string);
+              return Array.isArray(p) ? p : [];
+            } catch {
+              return [];
+            }
+          })();
+      if (ids.length) out[path] = ids;
+    }
+    return out;
+  } catch (err) {
+    console.error('igattach hgetall failed', err);
+    return {};
+  }
+}
+
 export async function attachTest(brand: Brand, path: string, testId: string): Promise<void> {
   const redis = getRedis();
   if (!redis) throw new Error('Attachment store not configured (UPSTASH_REDIS_REST_URL missing)');

@@ -37,6 +37,7 @@ import { AddWatchedInput } from '@/app/_components/add-watched-input';
 import { HideButton } from '@/app/_components/hide-button';
 import { HiddenManager } from '@/app/_components/hidden-manager';
 import { AddPinnedInput, UnpinButton } from '@/app/_components/pin-controls';
+import { AddLPInput, RemoveLPButton } from '@/app/_components/lp-controls';
 import { isAuthConfigured } from '@/lib/auth';
 import { Sparkline, type SparklineMarker, type SparklineBand } from '@/app/_components/sparkline';
 import { fmt, type Format } from '@/lib/format';
@@ -839,6 +840,8 @@ function Layer2Table({
   sortDir,
   hrefForSort,
   titles,
+  pathKeyed,
+  lpTab,
 }: {
   rows: Layer2Row[];
   titles: Record<string, string>;
@@ -849,6 +852,8 @@ function Layer2Table({
   watchedSet: Set<string>;
   starrable: boolean;
   hideable: boolean;
+  pathKeyed: boolean;
+  lpTab: boolean;
   showSessions: boolean;
   showRevenue: boolean;
   igTests: IntelligemsTest[];
@@ -922,7 +927,7 @@ function Layer2Table({
               key={r.key}
               className={
                 'border-t border-zinc-100 dark:border-zinc-800' +
-                (starrable
+                (pathKeyed
                   ? ' transition-colors hover:bg-sky-50/60 dark:hover:bg-sky-950/20'
                   : '')
               }
@@ -942,7 +947,7 @@ function Layer2Table({
                       link to the Layer 3 deep-dive for that page. Non-path
                       tabs (Top Products, Channel Attribution) keep the
                       plain label since there's no per-path drill-down. */}
-                  {starrable ? (
+                  {pathKeyed ? (
                     <Link
                       href={`/details/${brand}${r.key === '/' ? '' : r.key}?period=${period}`}
                       className="group inline-flex max-w-full items-center gap-1 truncate font-medium text-sky-700 underline decoration-sky-200 decoration-1 underline-offset-2 hover:decoration-sky-500 dark:text-sky-400 dark:decoration-sky-900 dark:hover:decoration-sky-500"
@@ -1007,6 +1012,7 @@ function Layer2Table({
                   ) : (
                     hideable && <HideButton brand={brand} path={r.key} />
                   )}
+                  {lpTab && <RemoveLPButton brand={brand} path={r.key} />}
                 </div>
                 {!starrable && r.sublabel && (
                   <div className="truncate text-xs text-zinc-500 dark:text-zinc-400">
@@ -1568,6 +1574,14 @@ export default async function Home({
               <AddPinnedInput brand={brand} />
             </div>
           )}
+          {tab === 'lps' && (
+            <div className="border-b border-zinc-200 bg-zinc-50/50 px-5 py-3 dark:border-zinc-800 dark:bg-zinc-900/30">
+              <div className="mb-1.5 text-[11px] uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                Add a landing page — paste any URL or path (manually-curated list)
+              </div>
+              <AddLPInput brand={brand} />
+            </div>
+          )}
           {hideable && <HiddenManager brand={brand} entries={hiddenEntries} />}
           {/* overflow-x-auto wrapper lets the wide table (esp. Watched
               tab with up to 14 columns) scroll horizontally inside the
@@ -1582,8 +1596,10 @@ export default async function Home({
               brand={brand}
               watchedSet={watchedSet}
               starrable={starrableTabs.has(tab)}
+              pathKeyed={starrableTabs.has(tab) || tab === 'lps' || tab === 'abtests'}
+              lpTab={tab === 'lps'}
               hideable={hideable}
-              showSessions={starrableTabs.has(tab) || tab === 'attribution'}
+              showSessions={starrableTabs.has(tab) || tab === 'lps' || tab === 'abtests' || tab === 'attribution'}
               showRevenue={tab !== 'attribution'}
               igTests={igTests}
               bands={sparkBands}
