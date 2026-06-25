@@ -4,6 +4,7 @@ import {
   getSessionsByPath,
   getSourceByPath,
   getPageSessionTimeSeries,
+  getProductVariants,
   type SourceBreakdownRow,
   type SessionDailyPoint,
 } from '@/lib/shopify';
@@ -84,6 +85,21 @@ export type PageDeepDive = {
   // All of the brand's active tests (id/name/type) — for the "attach a
   // test to this page" picker, including ones we can't auto-locate.
   allIntelligemsTests: { id: string; name: string; type: string }[];
+  // For PDPs: per-variant sales composition of this product (product-scoped
+  // — all web orders containing the product in the window, regardless of
+  // landing page). Empty for non-product pages or single-variant products.
+  variants: VariantSalesRow[];
+};
+
+export type VariantSalesRow = {
+  variantId: string;
+  title: string; // variant title (e.g. "60 capsules / Vanilla"), or SKU/#id fallback
+  sku: string | null;
+  units: number;
+  orders: number;
+  revenue: number;
+  aov: number; // revenue / orders
+  revenueShare: number; // 0..1 of this product's total variant revenue
 };
 
 type OrdersRow = {
@@ -328,6 +344,80 @@ async function getPageSessionSeries(
   return getPageSessionTimeSeries(brand, path, days).catch(() => []);
 }
 
+type VariantRow = {
+  VARIANT_ID: string | null;
+  SKU: string | null;
+  UNITS: number | string | null;
+  REVENUE: number | string | null;
+  ORDERS: number | string | null;
+};
+
+// Per-variant sales for a PDP's product, product-scoped: every web order in
+// the window that contains a line item of this product. Variant titles come
+// from the Admin API (Snowflake line items have no variant title). Returns
+// [] for non-product pages, uninstalled brands, or single-variant products.
+async function getVariantBreakdown(
+  brand: Brand,
+  path: string,
+  period: Period,
+): Promise<VariantSalesRow[]> {
+  const product = await getProductVariants(brand, path);
+  if (!product) return [];
+
+  const rows = await execute<VariantRow>(
+    `
+      WITH bounds AS (
+        SELECT
+          DATE_TRUNC('day', CURRENT_TIMESTAMP()) AS today_start,
+          DATEADD(day, -?, DATE_TRUNC('day', CURRENT_TIMESTAMP())) AS current_start
+      )
+      SELECT
+        li.VARIANT_ID AS VARIANT_ID,
+        ANY_VALUE(li.SKU) AS SKU,
+        SUM(li.QUANTITY) AS UNITS,
+        SUM(li.QUANTITY * li.PRICE_AMOUNT) AS REVENUE,
+        COUNT(DISTINCT o.ID) AS ORDERS
+      FROM DW_ANALYTICS.FACT.SHOPIFY_ORDERS_RD_ORDERS_ITEMS li
+      JOIN DW_ANALYTICS.FACT.SHOPIFY_ORDERS_RD_ORDERS o ON li.ORDER_ID = o.ID
+      , bounds b
+      WHERE o.BRAND = ?
+        AND o.SOURCE_NAME = 'web'
+        AND (o.IS_FAIRE_ORDER = FALSE OR o.IS_FAIRE_ORDER IS NULL)
+        AND o.CREATED_AT >= b.current_start
+        AND o.CREATED_AT < b.today_start
+        AND li.PRODUCT_ID = ?
+      GROUP BY li.VARIANT_ID
+      HAVING SUM(li.QUANTITY) > 0
+      ORDER BY REVENUE DESC NULLS LAST
+    `,
+    [period, brand, product.productId],
+  );
+
+  const totalRevenue = rows.reduce((s, r) => s + n(r.REVENUE), 0) || 0;
+  const mapped: VariantSalesRow[] = rows.map((r) => {
+    const variantId = r.VARIANT_ID ? String(r.VARIANT_ID) : '';
+    const meta = product.variants[variantId];
+    const sku = meta?.sku ?? (r.SKU || null);
+    const title =
+      meta?.title?.trim() ||
+      (sku ? `SKU ${sku}` : variantId ? `Variant #${variantId}` : 'Unknown variant');
+    const revenue = n(r.REVENUE);
+    const orders = n(r.ORDERS);
+    return {
+      variantId,
+      title,
+      sku,
+      units: n(r.UNITS),
+      orders,
+      revenue,
+      aov: orders > 0 ? revenue / orders : 0,
+      revenueShare: totalRevenue > 0 ? revenue / totalRevenue : 0,
+    };
+  });
+  // Only meaningful when the product actually has a variant split.
+  return mapped.length > 1 ? mapped : [];
+}
+
 export async function getPageDeepDive(
   brand: Brand,
   path: string,
@@ -336,7 +426,7 @@ export async function getPageDeepDive(
   // Bump the version when the PageDeepDive shape changes so stale cached
   // objects (missing newer fields like activeTests) can't be served.
   return withCache(
-    `deepdive:${brand}:${period}:${encodeURIComponent(path)}:v9`,
+    `deepdive:${brand}:${period}:${encodeURIComponent(path)}:v10`,
     120,
     () => getPageDeepDiveUncached(brand, path, period),
   );
@@ -364,6 +454,7 @@ async function getPageDeepDiveUncached(
     igActive,
     buckets,
     sessionSeries,
+    variants,
   ] = await Promise.all([
     getSessionsByPath(brand, period).catch(() => new Map()),
     getSourceByPath(brand, path, period).catch(() => [] as SourceBreakdownRow[]),
@@ -388,6 +479,7 @@ async function getPageDeepDiveUncached(
     // ~13-month per-page session series for the rich Sessions/Conv cards.
     // Prefers Snowflake DAILY_SESSIONS (full history), falls back to ShopifyQL.
     getPageSessionSeries(brand, path, 365 + period).catch(() => []),
+    getVariantBreakdown(brand, path, period).catch(() => [] as VariantSalesRow[]),
   ]);
 
   // ShopifyQL session metrics for this path. The prior-period numbers
@@ -484,5 +576,6 @@ async function getPageDeepDiveUncached(
     intelligemsTest,
     activeTests,
     allIntelligemsTests,
+    variants,
   };
 }
