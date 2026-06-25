@@ -69,11 +69,16 @@ function toPath(raw: string | null | undefined): string | null {
   return v || '/';
 }
 
-// Raw fetch of active experiences for a brand (also used by the debug route).
-export async function fetchActiveExperiences(brand: Brand): Promise<RawExperience[]> {
+// Raw fetch of experiences for a brand at a given status. Defaults to
+// 'started' (the active set used everywhere) — pass 'ended' for the prior
+// /historical tests accordion.
+async function fetchExperiencesByStatus(
+  brand: Brand,
+  status: 'started' | 'ended',
+): Promise<RawExperience[]> {
   const t = token(brand);
   if (!t) return [];
-  const res = await fetch(`${BASE}/experiences-list?status=started&limit=100`, {
+  const res = await fetch(`${BASE}/experiences-list?status=${status}&limit=100`, {
     headers: { 'intelligems-access-token': t, accept: 'application/json' },
     cache: 'no-store',
   });
@@ -82,7 +87,12 @@ export async function fetchActiveExperiences(brand: Brand): Promise<RawExperienc
     return [];
   }
   const json = (await res.json()) as ExperiencesListResponse;
-  return (json.experiencesList ?? []).filter((e) => !e.status || e.status === 'started');
+  return (json.experiencesList ?? []).filter((e) => !e.status || e.status === status);
+}
+
+// Raw fetch of active experiences for a brand (also used by the debug route).
+export async function fetchActiveExperiences(brand: Brand): Promise<RawExperience[]> {
+  return fetchExperiencesByStatus(brand, 'started');
 }
 
 // Raw analytics for one experiment (cohort-attributed results per
@@ -242,6 +252,20 @@ export async function getActiveTests(brand: Brand): Promise<ActiveTest[]> {
     } catch (err) {
       console.error(`Intelligems ${brand} fetch failed:`, err);
       return staticToActive(brand);
+    }
+  });
+}
+
+// Ended/prior tests for a brand, located to paths where possible. Cached.
+// Empty when there's no token (no static fallback for historical tests).
+export async function getEndedTests(brand: Brand): Promise<ActiveTest[]> {
+  if (!token(brand)) return [];
+  return withCache(`intelligems:ended:${brand}:v1`, CACHE_TTL_SECONDS, async () => {
+    try {
+      return mapToActiveTests(await fetchExperiencesByStatus(brand, 'ended'));
+    } catch (err) {
+      console.error(`Intelligems ended ${brand} fetch failed:`, err);
+      return [];
     }
   });
 }

@@ -14,6 +14,7 @@ import { GenerateNarrativeButton } from '@/app/_components/narrative-actions';
 import { HistoryPicker } from '@/app/_components/history-picker';
 import { RefreshIntelligems } from '@/app/_components/refresh-intelligems';
 import { AttachTestPicker, DetachButton } from '@/app/_components/attach-test';
+import { DismissTestButton, RestoreTestButton } from '@/app/_components/dismiss-test';
 import type { ExperienceResults } from '@/lib/intelligems-api';
 import { Sparkline, type SparklineBand } from '@/app/_components/sparkline';
 import { fmt, type Format } from '@/lib/format';
@@ -526,9 +527,13 @@ export default async function PageDeepDivePage({
                           ? 'redirect destination'
                           : 'targeted here'}
                     </span>
-                    {t.manual && (
+                    {t.manual ? (
                       <span className="inline-flex items-center gap-1 text-[10px] text-zinc-400 dark:text-zinc-500">
                         · manually attached <DetachButton brand={brand} path={path} testId={t.id} />
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-[10px] text-zinc-400 dark:text-zinc-500">
+                        · <DismissTestButton brand={brand} path={path} testId={t.id} />
                       </span>
                     )}
                   </div>
@@ -591,6 +596,56 @@ export default async function PageDeepDivePage({
               (o) => !data.activeTests.some((t) => t.id === o.id),
             )}
           />
+
+          {/* Prior (ended) + dismissed tests — collapsed by default. */}
+          {(data.endedTests.length > 0 || data.dismissedTests.length > 0) && (
+            <details className="mt-3 border-t border-amber-100 pt-2 dark:border-amber-900/40">
+              <summary className="cursor-pointer text-xs font-medium text-amber-800 hover:underline dark:text-amber-300">
+                Prior &amp; dismissed tests ({data.endedTests.length + data.dismissedTests.length})
+              </summary>
+              <div className="mt-2 space-y-3">
+                {data.dismissedTests.map((t) => (
+                  <div key={`d-${t.id}`} className="flex flex-wrap items-center gap-2 text-sm">
+                    <span className="inline-flex items-center rounded-full bg-zinc-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                      dismissed
+                    </span>
+                    <a
+                      href={t.testUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-medium text-sky-700 underline decoration-sky-200 underline-offset-2 hover:decoration-sky-500 dark:text-sky-400 dark:decoration-sky-900"
+                    >
+                      {t.name}
+                    </a>
+                    <span className="text-[10px] text-zinc-400 dark:text-zinc-500">
+                      · <RestoreTestButton brand={brand} path={path} testId={t.id} />
+                    </span>
+                  </div>
+                ))}
+                {data.endedTests.map((t) => (
+                  <div key={`e-${t.id}`} className="border-t border-amber-100/60 pt-2 first:border-t-0 first:pt-0 dark:border-amber-900/30">
+                    <div className="flex flex-wrap items-center gap-2 text-sm">
+                      <span className="inline-flex items-center rounded-full bg-zinc-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                        ended
+                      </span>
+                      <span className="inline-flex items-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+                        {igTypeLabel(t.type)}
+                      </span>
+                      <a
+                        href={t.testUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-medium text-sky-700 underline decoration-sky-200 underline-offset-2 hover:decoration-sky-500 dark:text-sky-400 dark:decoration-sky-900"
+                      >
+                        {t.name}
+                      </a>
+                    </div>
+                    {t.results && <TestResults results={t.results} />}
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
         </section>
 
         {/* Core metric cards — all full Layer-1-style rich cards. */}

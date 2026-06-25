@@ -12,12 +12,13 @@ import { getActivePromos } from '@/lib/queries/promos';
 import { type IntelligemsTest } from '@/lib/intelligems-tests';
 import {
   getActiveTests,
+  getEndedTests,
   getExperienceResults,
   matchActiveTestsForPath,
   type ActiveTest,
   type ExperienceResults,
 } from '@/lib/intelligems-api';
-import { getAttachedTestIds } from '@/lib/intelligems-attach';
+import { getAttachedTestIds, getDismissedTestIds } from '@/lib/intelligems-attach';
 import type { Brand, Period, Bucket, DailyPoint } from '@/lib/queries/orders';
 import type { Promo } from '@/lib/queries/promos';
 
@@ -83,6 +84,19 @@ export type PageDeepDive = {
   // All of the brand's active tests (id/name/type) — for the "attach a
   // test to this page" picker, including ones we can't auto-locate.
   allIntelligemsTests: { id: string; name: string; type: string }[];
+  // Ended/prior Intelligems tests located to this page (with results),
+  // for the collapsed "prior tests" accordion.
+  endedTests: {
+    id: string;
+    name: string;
+    type: string;
+    testUrl: string;
+    role: 'origin' | 'destination' | 'targeted';
+    results: ExperienceResults | null;
+  }[];
+  // Active tests the team dismissed from this page — shown in the accordion
+  // with a restore control, so dismissing is reversible.
+  dismissedTests: { id: string; name: string; type: string; testUrl: string }[];
 };
 
 type OrdersRow = {
@@ -289,7 +303,7 @@ export async function getPageDeepDive(
   // Bump the version when the PageDeepDive shape changes so stale cached
   // objects (missing newer fields like activeTests) can't be served.
   return withCache(
-    `deepdive:${brand}:${period}:${encodeURIComponent(path)}:v9`,
+    `deepdive:${brand}:${period}:${encodeURIComponent(path)}:v10`,
     120,
     () => getPageDeepDiveUncached(brand, path, period),
   );
@@ -317,6 +331,7 @@ async function getPageDeepDiveUncached(
     igActive,
     buckets,
     sessionSeries,
+    igEnded,
   ] = await Promise.all([
     getSessionsByPath(brand, period).catch(() => new Map()),
     getSourceByPath(brand, path, period).catch(() => [] as SourceBreakdownRow[]),
@@ -340,6 +355,7 @@ async function getPageDeepDiveUncached(
     })),
     // ~13-month per-page session series for the rich Sessions/Conv cards.
     getPageSessionTimeSeries(brand, path, 365 + period).catch(() => []),
+    getEndedTests(brand).catch(() => [] as ActiveTest[]),
   ]);
 
   // ShopifyQL session metrics for this path. The prior-period numbers
@@ -364,7 +380,11 @@ async function getPageDeepDiveUncached(
   const onPage = matchActiveTestsForPath(igActive, path);
   // Manually-attached tests (template/product-targeted ones the team
   // pinned to this page) that auto-detection didn't already surface.
-  const attachedIds = await getAttachedTestIds(brand, path).catch(() => [] as string[]);
+  const [attachedIds, dismissedIdArr] = await Promise.all([
+    getAttachedTestIds(brand, path).catch(() => [] as string[]),
+    getDismissedTestIds(brand, path).catch(() => [] as string[]),
+  ]);
+  const dismissedIds = new Set(dismissedIdArr);
   const onPageIds = new Set(onPage.map((t) => t.id));
   const manualTests = attachedIds
     .filter((id) => !onPageIds.has(id))
@@ -390,17 +410,22 @@ async function getPageDeepDiveUncached(
           | 'destination',
       }
     : null;
+  // Dismissed located tests are pulled out of the prominent list and shown
+  // (restorable) in the accordion instead.
+  const shown = combined.filter(({ t }) => !dismissedIds.has(t.id));
+  const roleFor = (t: ActiveTest) =>
+    (t.origins.includes(path)
+      ? 'origin'
+      : t.destinations.includes(path)
+        ? 'destination'
+        : 'targeted') as 'origin' | 'destination' | 'targeted';
   const activeTests = await Promise.all(
-    combined.map(async ({ t, manual }) => ({
+    shown.map(async ({ t, manual }) => ({
       id: t.id,
       name: t.name,
       type: t.type,
       testUrl: t.testUrl,
-      role: (t.origins.includes(path)
-        ? 'origin'
-        : t.destinations.includes(path)
-          ? 'destination'
-          : 'targeted') as 'origin' | 'destination' | 'targeted',
+      role: roleFor(t),
       results: await getExperienceResults(brand, t.id).catch(() => null),
       redirectsTo: t.redirects
         .filter((r) => r.origin === path)
@@ -409,6 +434,22 @@ async function getPageDeepDiveUncached(
         .filter((r) => r.destination === path)
         .map((r) => r.origin),
       manual,
+    })),
+  );
+  const dismissedTests = combined
+    .filter(({ t }) => dismissedIds.has(t.id))
+    .map(({ t }) => ({ id: t.id, name: t.name, type: t.type, testUrl: t.testUrl }));
+
+  // Ended/prior tests located to this page (cap the results fetches).
+  const endedOnPage = matchActiveTestsForPath(igEnded, path).slice(0, 8);
+  const endedTests = await Promise.all(
+    endedOnPage.map(async (t) => ({
+      id: t.id,
+      name: t.name,
+      type: t.type,
+      testUrl: t.testUrl,
+      role: roleFor(t),
+      results: await getExperienceResults(brand, t.id).catch(() => null),
     })),
   );
   const allIntelligemsTests = igActive.map((t) => ({ id: t.id, name: t.name, type: t.type }));
@@ -436,5 +477,7 @@ async function getPageDeepDiveUncached(
     intelligemsTest,
     activeTests,
     allIntelligemsTests,
+    endedTests,
+    dismissedTests,
   };
 }
