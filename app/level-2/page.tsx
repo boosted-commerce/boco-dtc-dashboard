@@ -9,6 +9,7 @@ import {
   type Layer2Tab,
 } from '@/lib/queries/layer2';
 import { AddLPInput, RemoveLPButton } from '@/app/_components/lp-controls';
+import { ReorderControls } from '@/app/_components/reorder-controls';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -176,6 +177,7 @@ function Layer2Table({
   showSessions,
   showRevenue,
   lpTab,
+  reorderTab,
 }: {
   rows: Layer2Row[];
   metricNoun: 'orders' | 'units' | 'orders attributed';
@@ -186,6 +188,7 @@ function Layer2Table({
   showSessions: boolean;
   showRevenue: boolean;
   lpTab?: boolean;
+  reorderTab?: boolean;
 }) {
   if (rows.length === 0) {
     return (
@@ -224,7 +227,7 @@ function Layer2Table({
         </tr>
       </thead>
       <tbody>
-        {rows.map((r) => {
+        {rows.map((r, i) => {
           // For sessions-only tabs (Channel Attribution), trend on sessions
           // vs prior_sessions — revenue is always $0 on those rows.
           const currentForTrend = showRevenue ? r.currentRevenue : r.sessions ?? 0;
@@ -241,6 +244,16 @@ function Layer2Table({
               }
             >
               <td className="max-w-md truncate px-5 py-3 text-zinc-900 dark:text-zinc-100">
+                {reorderTab && (
+                  <span className="mr-2 inline-block align-middle">
+                    <ReorderControls
+                      brand={brand}
+                      path={r.key}
+                      isFirst={i === 0}
+                      isLast={i === rows.length - 1}
+                    />
+                  </span>
+                )}
                 {pathKeyed ? (
                   <Link
                     href={`/details/${brand}${r.key === '/' ? '' : r.key}?period=${period}`}
@@ -437,6 +450,7 @@ export default async function Level2Page({
             showSessions={showSessions}
             showRevenue={showRevenue}
             lpTab={tab === 'lps'}
+            reorderTab={tab === 'watched'}
           />
         </section>
 
