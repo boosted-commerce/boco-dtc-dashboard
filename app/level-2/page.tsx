@@ -8,6 +8,7 @@ import {
   type Layer2Row,
   type Layer2Tab,
 } from '@/lib/queries/layer2';
+import { AddLPInput, RemoveLPButton } from '@/app/_components/lp-controls';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -174,6 +175,7 @@ function Layer2Table({
   pathKeyed,
   showSessions,
   showRevenue,
+  lpTab,
 }: {
   rows: Layer2Row[];
   metricNoun: 'orders' | 'units' | 'orders attributed';
@@ -183,6 +185,7 @@ function Layer2Table({
   pathKeyed: boolean;
   showSessions: boolean;
   showRevenue: boolean;
+  lpTab?: boolean;
 }) {
   if (rows.length === 0) {
     return (
@@ -260,6 +263,11 @@ function Layer2Table({
                     {r.sublabel}
                   </div>
                 )}
+                {lpTab && (
+                  <div className="mt-1">
+                    <RemoveLPButton brand={brand} path={r.key} />
+                  </div>
+                )}
               </td>
               {showSessions && (
                 <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
@@ -327,15 +335,29 @@ export default async function Level2Page({
   const rows = await getLayer2(brand, period, tab);
   const metricNounByTab: Record<Layer2Tab, 'orders' | 'units' | 'orders attributed'> = {
     watched: 'orders',
+    lps: 'orders',
+    abtests: 'orders',
     pdps: 'orders',
     collections: 'orders',
     cms: 'orders',
     products: 'units',
     attribution: 'orders attributed',
   };
-  const pathKeyedTabs: ReadonlySet<Layer2Tab> = new Set(['watched', 'pdps', 'collections', 'cms']);
+  const pathKeyedTabs: ReadonlySet<Layer2Tab> = new Set([
+    'watched',
+    'lps',
+    'abtests',
+    'pdps',
+    'collections',
+    'cms',
+  ]);
   const showSessions = pathKeyedTabs.has(tab) || tab === 'attribution';
   const showRevenue = tab !== 'attribution';
+  // Per-tab one-line description under the heading.
+  const tabBlurb: Partial<Record<Layer2Tab, string>> = {
+    lps: 'manually-curated landing pages',
+    abtests: 'pages in an active Intelligems test (auto-detected)',
+  };
 
   return (
     <main className="min-h-screen bg-zinc-50 px-6 py-10 dark:bg-black">
@@ -377,7 +399,7 @@ export default async function Level2Page({
                   `Traffic sources · session-level data from ShopifyQL · ${brand}`
                 ) : (
                   <>
-                    {tab === 'watched' ? 'pages on the watch list' : 'top 100 by revenue'} · DTC orders only · {brand}{' '}
+                    {tabBlurb[tab] ?? (tab === 'watched' ? 'pages on the watch list' : 'top 100 by revenue')} · DTC orders only · {brand}{' '}
                     <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 font-semibold text-sky-700 dark:bg-sky-950/60 dark:text-sky-300">
                       <span aria-hidden="true">👉</span>
                       click any page → deep-dive view
@@ -394,15 +416,27 @@ export default async function Level2Page({
               labelFor={(t) => LAYER2_LABELS[t]}
             />
           </div>
+          {tab === 'lps' && (
+            <div className="border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
+              <AddLPInput brand={brand} />
+            </div>
+          )}
           <Layer2Table
             rows={rows}
             metricNoun={metricNounByTab[tab]}
-            emptyMessage={`No ${LAYER2_LABELS[tab].toLowerCase()} data in this period for ${brand}.`}
+            emptyMessage={
+              tab === 'lps'
+                ? `No landing pages added yet for ${brand}. Add one above.`
+                : tab === 'abtests'
+                  ? `No active Intelligems A/B tests located to pages for ${brand}.`
+                  : `No ${LAYER2_LABELS[tab].toLowerCase()} data in this period for ${brand}.`
+            }
             period={period}
             brand={brand}
             pathKeyed={pathKeyedTabs.has(tab)}
             showSessions={showSessions}
             showRevenue={showRevenue}
+            lpTab={tab === 'lps'}
           />
         </section>
 

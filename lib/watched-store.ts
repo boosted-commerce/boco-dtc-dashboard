@@ -186,6 +186,45 @@ export async function removePinnedPath(brand: Brand, path: string): Promise<void
   await redis.srem(pinnedKey(brand), path);
 }
 
+// --- Landing Pages (manual curated list) ---
+// A separate team-curated list of campaign/ad landing pages that don't
+// surface in the auto-discovered PDP/Collection/CMS tabs (e.g. /pages/*
+// promo or funnel pages). Per-brand SET `lp:{brand}`. Unlike Watched, it's
+// not Clarity-budget-constrained, so the cap is looser. Seeds empty.
+const lpKey = (brand: Brand) => `lp:${brand}`;
+export const LP_MAX = 50;
+
+export async function getLPPaths(brand: Brand): Promise<string[]> {
+  const redis = getRedis();
+  if (!redis) return [];
+  try {
+    return (await redis.smembers(lpKey(brand))).sort();
+  } catch (err) {
+    console.error('lp-store read failed; treating as empty', err);
+    return [];
+  }
+}
+
+export async function addLPPath(brand: Brand, path: string): Promise<void> {
+  const redis = getRedis();
+  if (!redis) throw new Error('Landing-pages store not configured (UPSTASH_REDIS_REST_URL missing)');
+  const alreadyMember = await redis.sismember(lpKey(brand), path);
+  if (alreadyMember === 1) return;
+  const currentCount = await redis.scard(lpKey(brand));
+  if (currentCount >= LP_MAX) {
+    throw new Error(
+      `Landing-pages list is at the ${LP_MAX}-page max for ${brand}. Remove one before adding another.`,
+    );
+  }
+  await redis.sadd(lpKey(brand), path);
+}
+
+export async function removeLPPath(brand: Brand, path: string): Promise<void> {
+  const redis = getRedis();
+  if (!redis) throw new Error('Landing-pages store not configured (UPSTASH_REDIS_REST_URL missing)');
+  await redis.srem(lpKey(brand), path);
+}
+
 // Normalize a user-typed URL into a path the dashboard can match.
 //  - Strip protocol + host so 'https://site.com/pages/foo?utm=x' -> '/pages/foo'
 //  - Drop query string

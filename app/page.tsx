@@ -1256,6 +1256,8 @@ export default async function Home({
   const hideable = hideableTabs.has(tab);
   const metricNounByTab: Record<Layer2Tab, 'orders' | 'units' | 'orders attributed'> = {
     watched: 'orders',
+    lps: 'orders',
+    abtests: 'orders',
     pdps: 'orders',
     collections: 'orders',
     cms: 'orders',
@@ -1265,6 +1267,8 @@ export default async function Home({
   // Noun used in the "Show all N <noun>" expand link, per tab.
   const rowNounByTab: Record<Layer2Tab, string> = {
     watched: 'watched pages',
+    lps: 'landing pages',
+    abtests: 'A/B test pages',
     pdps: 'product pages',
     collections: 'collections',
     cms: 'pages',

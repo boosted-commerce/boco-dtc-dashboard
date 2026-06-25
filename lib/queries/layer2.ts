@@ -1,8 +1,9 @@
 import { execute } from '@/lib/snowflake';
 import { withCache } from '@/lib/cache';
 import type { Brand, DailyPoint, Period } from '@/lib/queries/orders';
-import { getWatchedPaths, getHiddenPaths, getPinnedPaths } from '@/lib/watched-store';
+import { getWatchedPaths, getHiddenPaths, getPinnedPaths, getLPPaths } from '@/lib/watched-store';
 import { getChannelSessions, getSessionsByPath } from '@/lib/shopify';
+import { getActiveTests } from '@/lib/intelligems-api';
 
 // Layer 2 — page-/product-/source-level tables below Level 1. Each function
 // returns the top N rows for the selected period with a daily-revenue series
@@ -280,6 +281,36 @@ export const getCollections = (brand: Brand, period: Period) =>
 export const getCMSPages = (brand: Brand, period: Period) =>
   getPagesByType(brand, period, '/pages/%');
 
+// Manually-curated Landing Pages list (separate Redis set, seeded empty).
+// Same $0-inclusive metrics as Watched so a freshly-added campaign page
+// still renders before it has orders.
+export async function getLandingPages(brand: Brand, period: Period): Promise<Layer2Row[]> {
+  return getRowsForPaths(brand, period, await getLPPaths(brand));
+}
+
+// Pages currently involved in an active Intelligems test (redirect origins
+// & destinations + on-site-edit URL targets), auto-listed. Each row's
+// sublabel names the test(s) touching that path.
+export async function getABTestPages(brand: Brand, period: Period): Promise<Layer2Row[]> {
+  const tests = await getActiveTests(brand).catch(() => []);
+  // path -> set of test names touching it
+  const byPath = new Map<string, Set<string>>();
+  for (const t of tests) {
+    for (const p of [...t.origins, ...t.destinations, ...t.targetPaths]) {
+      if (!p) continue;
+      const set = byPath.get(p) ?? new Set<string>();
+      set.add(t.name);
+      byPath.set(p, set);
+    }
+  }
+  if (byPath.size === 0) return [];
+  const rows = await getRowsForPaths(brand, period, [...byPath.keys()]);
+  return rows.map((r) => {
+    const names = byPath.get(r.key);
+    return names ? { ...r, sublabel: [...names].join(' · ') } : r;
+  });
+}
+
 export async function getTopProductsBySales(
   brand: Brand,
   period: Period,
@@ -470,6 +501,8 @@ async function getChannelAttributionFromOrders(
 
 export type Layer2Tab =
   | 'watched'
+  | 'lps'
+  | 'abtests'
   | 'pdps'
   | 'collections'
   | 'cms'
@@ -477,6 +510,8 @@ export type Layer2Tab =
   | 'attribution';
 export const LAYER2_TABS: readonly Layer2Tab[] = [
   'watched',
+  'lps',
+  'abtests',
   'pdps',
   'collections',
   'cms',
@@ -486,6 +521,8 @@ export const LAYER2_TABS: readonly Layer2Tab[] = [
 
 export const LAYER2_LABELS: Record<Layer2Tab, string> = {
   watched: 'Watched',
+  lps: 'Landing Pages',
+  abtests: 'A/B Tests',
   pdps: 'PDPs',
   collections: 'Collections',
   cms: 'CMS Pages',
@@ -504,6 +541,8 @@ export function parseLayer2Tab(raw: unknown): Layer2Tab {
 // Attribution (utm sources) are not path-keyed.
 const PATH_KEYED_TABS: ReadonlySet<Layer2Tab> = new Set([
   'watched',
+  'lps',
+  'abtests',
   'pdps',
   'collections',
   'cms',
@@ -543,6 +582,10 @@ async function getLayer2RowsInner(
   switch (tab) {
     case 'watched':
       return getWatchedPages(brand, period);
+    case 'lps':
+      return getLandingPages(brand, period);
+    case 'abtests':
+      return getABTestPages(brand, period);
     case 'pdps':
       return getPDPs(brand, period);
     case 'collections':
