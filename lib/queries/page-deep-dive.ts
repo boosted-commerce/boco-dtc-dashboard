@@ -5,6 +5,7 @@ import {
   getSourceByPath,
   getPageSessionTimeSeries,
   type SourceBreakdownRow,
+  type SessionDailyPoint,
 } from '@/lib/shopify';
 import { bucketFromTimeSeries } from '@/lib/queries/orders';
 import { getClarityMetrics, type ClarityPageMetrics } from '@/lib/clarity-metrics';
@@ -281,6 +282,52 @@ async function getPageBuckets(
   };
 }
 
+type DailySessionRow = {
+  D: string;
+  SESSIONS: number | string | null;
+  CONVERSION_RATE: number | string | null;
+};
+
+// Per-page daily session series, preferring our own Snowflake history
+// (BOCO_DASHBOARD.SESSIONS.DAILY_SESSIONS, populated by the daily sync) so
+// the rich cards aren't capped at ShopifyQL's ~28-day retention. Falls back
+// to live ShopifyQL when the table has no rows for this path yet (e.g. a
+// page the sync hasn't seen, or before the backfill reached it).
+async function getPageSessionSeries(
+  brand: Brand,
+  path: string,
+  days: number,
+): Promise<SessionDailyPoint[]> {
+  try {
+    const rows = await execute<DailySessionRow>(
+      `
+        SELECT
+          TO_VARCHAR(ACTIVITY_DATE, 'YYYY-MM-DD') AS D,
+          SESSIONS,
+          CONVERSION_RATE
+        FROM BOCO_DASHBOARD.SESSIONS.DAILY_SESSIONS
+        WHERE BRAND = ?
+          AND LANDING_PATH = ?
+          AND ACTIVITY_DATE >= DATEADD(day, -?, CURRENT_DATE())
+        ORDER BY ACTIVITY_DATE
+      `,
+      [brand, path, days],
+    );
+    if (rows.length > 0) {
+      // Stored CONVERSION_RATE is a decimal fraction (orders/sessions), so
+      // ordersImplied = sessions × rate matches the ShopifyQL path's shape.
+      return rows.map((r) => {
+        const sessions = n(r.SESSIONS);
+        const rate = Number(r.CONVERSION_RATE) || 0;
+        return { date: r.D, sessions, ordersImplied: sessions * rate };
+      });
+    }
+  } catch {
+    // Table missing / query error → degrade to ShopifyQL below.
+  }
+  return getPageSessionTimeSeries(brand, path, days).catch(() => []);
+}
+
 export async function getPageDeepDive(
   brand: Brand,
   path: string,
@@ -339,7 +386,8 @@ async function getPageDeepDiveUncached(
       subRevenue: emptyBucket,
     })),
     // ~13-month per-page session series for the rich Sessions/Conv cards.
-    getPageSessionTimeSeries(brand, path, 365 + period).catch(() => []),
+    // Prefers Snowflake DAILY_SESSIONS (full history), falls back to ShopifyQL.
+    getPageSessionSeries(brand, path, 365 + period).catch(() => []),
   ]);
 
   // ShopifyQL session metrics for this path. The prior-period numbers
