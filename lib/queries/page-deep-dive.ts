@@ -3,8 +3,10 @@ import { withCache } from '@/lib/cache';
 import {
   getSessionsByPath,
   getSourceByPath,
+  getPageSessionTimeSeries,
   type SourceBreakdownRow,
 } from '@/lib/shopify';
+import { bucketFromTimeSeries } from '@/lib/queries/orders';
 import { getClarityMetrics, type ClarityPageMetrics } from '@/lib/clarity-metrics';
 import { getActivePromos } from '@/lib/queries/promos';
 import { type IntelligemsTest } from '@/lib/intelligems-tests';
@@ -38,6 +40,10 @@ export type PageDeepDive = {
   // doesn't give a clean per-page daily series for sessions/conv.
   orderBucket: Bucket;
   revenueBucket: Bucket;
+  // Per-page session + conversion buckets (ShopifyQL daily series) so the
+  // deep dive can show them as rich sparkline cards like orders/revenue.
+  sessionsBucket: Bucket;
+  convRateBucket: Bucket;
   // Subscription revenue landed on this page (web subscription orders).
   subRevenueBucket: Bucket;
   // Most recent two complete days (orders + revenue), so the AI summary
@@ -283,7 +289,7 @@ export async function getPageDeepDive(
   // Bump the version when the PageDeepDive shape changes so stale cached
   // objects (missing newer fields like activeTests) can't be served.
   return withCache(
-    `deepdive:${brand}:${period}:${encodeURIComponent(path)}:v8`,
+    `deepdive:${brand}:${period}:${encodeURIComponent(path)}:v9`,
     120,
     () => getPageDeepDiveUncached(brand, path, period),
   );
@@ -310,6 +316,7 @@ async function getPageDeepDiveUncached(
     orders,
     igActive,
     buckets,
+    sessionSeries,
   ] = await Promise.all([
     getSessionsByPath(brand, period).catch(() => new Map()),
     getSourceByPath(brand, path, period).catch(() => [] as SourceBreakdownRow[]),
@@ -331,6 +338,8 @@ async function getPageDeepDiveUncached(
       revenue: emptyBucket,
       subRevenue: emptyBucket,
     })),
+    // ~13-month per-page session series for the rich Sessions/Conv cards.
+    getPageSessionTimeSeries(brand, path, 365 + period).catch(() => []),
   ]);
 
   // ShopifyQL session metrics for this path. The prior-period numbers
@@ -338,6 +347,16 @@ async function getPageDeepDiveUncached(
   // sessions will read as "new" but vs-prior on orders/revenue works.
   // (Could extend with a second ShopifyQL call later if useful.)
   const sess = sessionsByPath.get(path);
+
+  // Per-page session + conv buckets from the daily series. Fall back to a
+  // current-only bucket (from getSessionsByPath) if the series is empty
+  // (e.g. ShopifyQL didn't support the per-path filter).
+  const fallbackSessions: Bucket = { ...emptyBucket, current: sess?.sessions ?? 0 };
+  const fallbackConv: Bucket = { ...emptyBucket, current: sess?.convRate ?? 0 };
+  const sessionsBucket =
+    sessionSeries.length > 0 ? bucketFromTimeSeries(sessionSeries, period, 'sessions') : fallbackSessions;
+  const convRateBucket =
+    sessionSeries.length > 0 ? bucketFromTimeSeries(sessionSeries, period, 'convRate') : fallbackConv;
 
   // Intelligems tests located to this page. The redirect (origin/dest)
   // match drives the header pill; the full list (incl. on-site edits
@@ -405,6 +424,8 @@ async function getPageDeepDiveUncached(
     orderBucket: buckets.orders,
     revenueBucket: buckets.revenue,
     subRevenueBucket: buckets.subRevenue,
+    sessionsBucket,
+    convRateBucket,
     recentDays: {
       yesterday: { orders: orders.ydayCount, revenue: orders.ydayRev },
       dayBefore: { orders: orders.dbeforeCount, revenue: orders.dbeforeRev },

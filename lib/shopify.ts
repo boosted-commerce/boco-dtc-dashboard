@@ -457,6 +457,31 @@ export async function getSessionTimeSeries(
   });
 }
 
+// Per-landing-page daily session timeseries — filtered to one path so we
+// can build the same rich cards (sparkline + windows) on the Layer 3 deep
+// dive. Returns [] on error / unsupported filter (caller degrades).
+export async function getPageSessionTimeSeries(
+  brand: Brand,
+  path: string,
+  days: number,
+): Promise<SessionDailyPoint[]> {
+  const safePath = path.replace(/'/g, "''");
+  const tableData = await runShopifyQL(
+    brand,
+    `FROM sessions SHOW sessions, conversion_rate WHERE landing_page_path = '${safePath}' TIMESERIES day SINCE -${days}d UNTIL today ORDER BY day`,
+  );
+  if (!tableData) return [];
+  return tableData.rows.map((r) => {
+    const sessions = Number(r.sessions) || 0;
+    const convRateDec = Number(r.conversion_rate) || 0;
+    return {
+      date: String(r.day ?? '').slice(0, 10),
+      sessions,
+      ordersImplied: sessions * convRateDec,
+    };
+  });
+}
+
 // Source breakdown for a single landing page. ShopifyQL's sessions
 // table doesn't expose device info (confirmed via probe — device_type,
 // device_category, device, client_type all return "Column Not Found"),
