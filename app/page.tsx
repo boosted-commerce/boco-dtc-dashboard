@@ -34,6 +34,7 @@ import { matchIntelligemsTest, getIntelligemsTests, getActiveTests } from '@/lib
 import { AttachTestToPage } from '@/app/_components/attach-test-to-page';
 import type { IntelligemsTest } from '@/lib/intelligems-tests';
 import { StarButton } from '@/app/_components/star-button';
+import { ReorderControls } from '@/app/_components/reorder-controls';
 import { AddWatchedInput } from '@/app/_components/add-watched-input';
 import { HideButton } from '@/app/_components/hide-button';
 import { HiddenManager } from '@/app/_components/hidden-manager';
@@ -843,6 +844,7 @@ function Layer2Table({
   titles,
   pathKeyed,
   lpTab,
+  reorderTab,
 }: {
   rows: Layer2Row[];
   titles: Record<string, string>;
@@ -855,6 +857,7 @@ function Layer2Table({
   hideable: boolean;
   pathKeyed: boolean;
   lpTab: boolean;
+  reorderTab: boolean;
   showSessions: boolean;
   showRevenue: boolean;
   igTests: IntelligemsTest[];
@@ -913,7 +916,7 @@ function Layer2Table({
         </tr>
       </thead>
       <tbody>
-        {rows.map((r) => {
+        {rows.map((r, i) => {
           // For sessions-only tabs (e.g. Channel Attribution), compute
           // trend on sessions vs prior_sessions rather than revenue.
           const currentForTrend = showRevenue ? r.currentRevenue : r.sessions ?? 0;
@@ -1014,6 +1017,14 @@ function Layer2Table({
                     hideable && <HideButton brand={brand} path={r.key} />
                   )}
                   {lpTab && <RemoveLPButton brand={brand} path={r.key} />}
+                  {reorderTab && (
+                    <ReorderControls
+                      brand={brand}
+                      path={r.key}
+                      isFirst={i === 0}
+                      isLast={i === rows.length - 1}
+                    />
+                  )}
                 </div>
                 {!starrable && r.sublabel && (
                   <div className="truncate text-xs text-zinc-500 dark:text-zinc-400">
@@ -1616,6 +1627,7 @@ export default async function Home({
               starrable={starrableTabs.has(tab)}
               pathKeyed={starrableTabs.has(tab) || tab === 'lps' || tab === 'abtests'}
               lpTab={tab === 'lps'}
+              reorderTab={tab === 'watched' && !sortKey}
               hideable={hideable}
               showSessions={starrableTabs.has(tab) || tab === 'lps' || tab === 'abtests' || tab === 'attribution'}
               showRevenue={tab !== 'attribution'}
