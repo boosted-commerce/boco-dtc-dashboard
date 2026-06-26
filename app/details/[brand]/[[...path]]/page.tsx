@@ -37,6 +37,9 @@ function fmtPct(n: number): string {
 function fmtSeconds(s: number): string {
   return s >= 60 ? `${Math.round(s / 60)}m ${Math.round(s % 60)}s` : `${Math.round(s)}s`;
 }
+function fmtMoney(n: number): string {
+  return `$${Math.round(n).toLocaleString()}`;
+}
 
 function pctChange(current: number, prior: number): { arrow: '↑' | '↓' | '→'; text: string; color: string } | null {
   if (prior === 0) return null;
@@ -697,6 +700,73 @@ export default async function PageDeepDivePage({
             bands={promoBands}
           />
         </section>
+
+        {/* Per-variant sales composition (PDPs with a variant split). */}
+        {data.variants.length > 1 && (
+          <section className="mb-6 overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+            <div className="border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
+              <div className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                Variant breakdown
+              </div>
+              <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                Which variant drives sales · all web orders containing this product · {period}-day window
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wider text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
+                  <tr>
+                    <th className="px-5 py-2 font-medium">Variant</th>
+                    <th className="px-5 py-2 text-right font-medium">Units</th>
+                    <th className="px-5 py-2 text-right font-medium">Orders</th>
+                    <th className="px-5 py-2 text-right font-medium">Revenue</th>
+                    <th className="px-5 py-2 text-right font-medium">AOV</th>
+                    <th className="px-5 py-2 text-right font-medium">% of revenue</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.variants.map((v) => (
+                    <tr key={v.variantId} className="border-t border-zinc-100 dark:border-zinc-800">
+                      <td className="px-5 py-3 font-medium text-zinc-900 dark:text-zinc-100">
+                        {v.title}
+                        {v.sku && (
+                          <span className="ml-2 text-[11px] font-normal text-zinc-400 dark:text-zinc-500">
+                            {v.sku}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
+                        {fmtCount(v.units)}
+                      </td>
+                      <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
+                        {fmtCount(v.orders)}
+                      </td>
+                      <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
+                        {fmtMoney(v.revenue)}
+                      </td>
+                      <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
+                        {fmtMoney(v.aov)}
+                      </td>
+                      <td className="px-5 py-3 text-right tabular-nums">
+                        <div className="flex items-center justify-end gap-2">
+                          <span className="text-zinc-900 dark:text-zinc-100">
+                            {fmtPct(v.revenueShare * 100)}
+                          </span>
+                          <span className="h-1.5 w-16 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+                            <span
+                              className="block h-full rounded-full bg-sky-500/70 dark:bg-sky-400/70"
+                              style={{ width: `${Math.round(v.revenueShare * 100)}%` }}
+                            />
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
 
         {/* Scroll depth bar */}
         <section className="mb-6">

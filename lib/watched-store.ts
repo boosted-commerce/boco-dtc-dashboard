@@ -24,6 +24,38 @@ function getRedis(): Redis | null {
 
 const key = (brand: Brand) => `watched:${brand}`;
 const seedKey = (brand: Brand) => `watched:${brand}:seeded`;
+// Explicit display order for the watched list (JSON array of paths). The
+// membership SET stays the source of truth; this just records the team's
+// preferred ordering. Paths not in the array sort to the end alphabetically,
+// so a newly-added page appears last until it's moved.
+const orderKey = (brand: Brand) => `watched:${brand}:order`;
+
+async function getWatchedOrder(brand: Brand): Promise<string[]> {
+  const redis = getRedis();
+  if (!redis) return [];
+  try {
+    const raw = await redis.get<string[] | string>(orderKey(brand));
+    if (!raw) return [];
+    const arr = typeof raw === 'string' ? (JSON.parse(raw) as string[]) : raw;
+    return Array.isArray(arr) ? arr.filter((p) => typeof p === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+// Order a set of member paths by the stored order, with any unordered
+// members appended alphabetically. Pure helper shared by read + move.
+function applyOrder(members: string[], order: string[]): string[] {
+  const rank = new Map(order.map((p, i) => [p, i]));
+  return [...members].sort((a, b) => {
+    const ra = rank.get(a);
+    const rb = rank.get(b);
+    if (ra != null && rb != null) return ra - rb;
+    if (ra != null) return -1; // ordered ones first
+    if (rb != null) return 1;
+    return a.localeCompare(b); // both unordered → alphabetical
+  });
+}
 
 async function ensureSeeded(brand: Brand): Promise<void> {
   const redis = getRedis();
@@ -45,12 +77,40 @@ export async function getWatchedPaths(brand: Brand): Promise<string[]> {
   if (!redis) return [...(WATCHED_PAGES[brand] ?? [])].sort();
   try {
     await ensureSeeded(brand);
-    const members = await redis.smembers(key(brand));
-    return members.sort();
+    const [members, order] = await Promise.all([
+      redis.smembers(key(brand)),
+      getWatchedOrder(brand),
+    ]);
+    return applyOrder(members, order);
   } catch (err) {
     console.error('watched-store read failed; falling back to defaults', err);
     return [...(WATCHED_PAGES[brand] ?? [])].sort();
   }
+}
+
+// Move a watched path one slot up or down in the display order. Rebuilds
+// the order array from the current membership (so it self-heals if the
+// stored order drifted from the SET), swaps the path with its neighbour,
+// and persists. No-op at the ends.
+export async function moveWatchedPath(
+  brand: Brand,
+  path: string,
+  dir: 'up' | 'down',
+): Promise<void> {
+  const redis = getRedis();
+  if (!redis) throw new Error('Watched-pages store not configured (UPSTASH_REDIS_REST_URL missing)');
+  await ensureSeeded(brand);
+  const [members, order] = await Promise.all([
+    redis.smembers(key(brand)),
+    getWatchedOrder(brand),
+  ]);
+  const ordered = applyOrder(members, order);
+  const i = ordered.indexOf(path);
+  if (i === -1) return; // not a watched page
+  const j = dir === 'up' ? i - 1 : i + 1;
+  if (j < 0 || j >= ordered.length) return; // already at the end
+  [ordered[i], ordered[j]] = [ordered[j], ordered[i]];
+  await redis.set(orderKey(brand), JSON.stringify(ordered));
 }
 
 export async function getAllWatchedPaths(): Promise<Record<Brand, string[]>> {
@@ -184,6 +244,45 @@ export async function removePinnedPath(brand: Brand, path: string): Promise<void
   const redis = getRedis();
   if (!redis) throw new Error('Pinned-pages store not configured (UPSTASH_REDIS_REST_URL missing)');
   await redis.srem(pinnedKey(brand), path);
+}
+
+// --- Landing Pages (manual curated list) ---
+// A separate team-curated list of campaign/ad landing pages that don't
+// surface in the auto-discovered PDP/Collection/CMS tabs (e.g. /pages/*
+// promo or funnel pages). Per-brand SET `lp:{brand}`. Unlike Watched, it's
+// not Clarity-budget-constrained, so the cap is looser. Seeds empty.
+const lpKey = (brand: Brand) => `lp:${brand}`;
+export const LP_MAX = 50;
+
+export async function getLPPaths(brand: Brand): Promise<string[]> {
+  const redis = getRedis();
+  if (!redis) return [];
+  try {
+    return (await redis.smembers(lpKey(brand))).sort();
+  } catch (err) {
+    console.error('lp-store read failed; treating as empty', err);
+    return [];
+  }
+}
+
+export async function addLPPath(brand: Brand, path: string): Promise<void> {
+  const redis = getRedis();
+  if (!redis) throw new Error('Landing-pages store not configured (UPSTASH_REDIS_REST_URL missing)');
+  const alreadyMember = await redis.sismember(lpKey(brand), path);
+  if (alreadyMember === 1) return;
+  const currentCount = await redis.scard(lpKey(brand));
+  if (currentCount >= LP_MAX) {
+    throw new Error(
+      `Landing-pages list is at the ${LP_MAX}-page max for ${brand}. Remove one before adding another.`,
+    );
+  }
+  await redis.sadd(lpKey(brand), path);
+}
+
+export async function removeLPPath(brand: Brand, path: string): Promise<void> {
+  const redis = getRedis();
+  if (!redis) throw new Error('Landing-pages store not configured (UPSTASH_REDIS_REST_URL missing)');
+  await redis.srem(lpKey(brand), path);
 }
 
 // Normalize a user-typed URL into a path the dashboard can match.

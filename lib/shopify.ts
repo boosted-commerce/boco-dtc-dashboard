@@ -322,6 +322,67 @@ export async function getPageTitles(
   return out;
 }
 
+// Resolve a PDP path ("/products/<handle>") to its Shopify product id and
+// the variant titles keyed by numeric variant id. The Snowflake line-items
+// table stores VARIANT_ID/PRODUCT_ID but no variant title, so we look them
+// up here (cached 7 days per handle — variants change rarely). Returns null
+// when the path isn't a product, the brand isn't installed, or the handle
+// doesn't match exactly.
+export type ProductVariants = {
+  productId: string; // numeric id, matching Snowflake li.PRODUCT_ID
+  variants: Record<string, { title: string; sku: string | null }>; // numeric variant id → titles
+};
+
+function gidToNumeric(gid: string | undefined | null): string | null {
+  if (!gid) return null;
+  const m = String(gid).match(/(\d+)\s*$/);
+  return m ? m[1] : null;
+}
+
+async function fetchProductVariants(brand: Brand, handle: string): Promise<ProductVariants | null> {
+  const data = await runAdminGraphQL(
+    brand,
+    `query($q:String!){
+      products(first:1, query:$q){
+        nodes{
+          id handle
+          variants(first:100){ nodes{ id title sku } }
+        }
+      }
+    }`,
+    { q: `handle:${handle}` },
+  );
+  const conn = data?.products as
+    | { nodes?: Array<{ id?: string; handle?: string; variants?: { nodes?: Array<{ id?: string; title?: string; sku?: string }> } }> }
+    | undefined;
+  const node = conn?.nodes?.[0];
+  // Only trust an exact-handle match (Shopify search fuzzy-matches).
+  if (!node || node.handle !== handle) return null;
+  const productId = gidToNumeric(node.id);
+  if (!productId) return null;
+  const variants: ProductVariants['variants'] = {};
+  for (const v of node.variants?.nodes ?? []) {
+    const vid = gidToNumeric(v.id);
+    if (!vid) continue;
+    variants[vid] = { title: v.title ?? '', sku: v.sku || null };
+  }
+  return { productId, variants };
+}
+
+export async function getProductVariants(
+  brand: Brand,
+  path: string,
+): Promise<ProductVariants | null> {
+  const segs = path.split('?')[0].split('/').filter(Boolean);
+  if (segs[0] !== 'products' || segs.length < 2) return null;
+  const handle = segs[segs.length - 1];
+  return withCache(
+    `variants:${brand}:${encodeURIComponent(handle)}:v1`,
+    7 * 24 * 60 * 60,
+    () => fetchProductVariants(brand, handle),
+  ).catch(() => null);
+}
+
 // Strip protocol + host + query string + fragment so a ShopifyQL
 // landing_page_url ("https://www.asterwood.co/products/foo?srsltid=...")
 // reduces to the Snowflake-style path ("/products/foo") that the rest of

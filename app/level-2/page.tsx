@@ -8,6 +8,10 @@ import {
   type Layer2Row,
   type Layer2Tab,
 } from '@/lib/queries/layer2';
+import { AddLPInput, RemoveLPButton } from '@/app/_components/lp-controls';
+import { ReorderControls } from '@/app/_components/reorder-controls';
+import { AttachTestToPage } from '@/app/_components/attach-test-to-page';
+import { getActiveTests } from '@/lib/intelligems-api';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -174,6 +178,8 @@ function Layer2Table({
   pathKeyed,
   showSessions,
   showRevenue,
+  lpTab,
+  reorderTab,
 }: {
   rows: Layer2Row[];
   metricNoun: 'orders' | 'units' | 'orders attributed';
@@ -183,6 +189,8 @@ function Layer2Table({
   pathKeyed: boolean;
   showSessions: boolean;
   showRevenue: boolean;
+  lpTab?: boolean;
+  reorderTab?: boolean;
 }) {
   if (rows.length === 0) {
     return (
@@ -221,7 +229,7 @@ function Layer2Table({
         </tr>
       </thead>
       <tbody>
-        {rows.map((r) => {
+        {rows.map((r, i) => {
           // For sessions-only tabs (Channel Attribution), trend on sessions
           // vs prior_sessions — revenue is always $0 on those rows.
           const currentForTrend = showRevenue ? r.currentRevenue : r.sessions ?? 0;
@@ -238,6 +246,16 @@ function Layer2Table({
               }
             >
               <td className="max-w-md truncate px-5 py-3 text-zinc-900 dark:text-zinc-100">
+                {reorderTab && (
+                  <span className="mr-2 inline-block align-middle">
+                    <ReorderControls
+                      brand={brand}
+                      path={r.key}
+                      isFirst={i === 0}
+                      isLast={i === rows.length - 1}
+                    />
+                  </span>
+                )}
                 {pathKeyed ? (
                   <Link
                     href={`/details/${brand}${r.key === '/' ? '' : r.key}?period=${period}`}
@@ -258,6 +276,11 @@ function Layer2Table({
                 {r.sublabel && (
                   <div className="truncate text-xs text-zinc-500 dark:text-zinc-400">
                     {r.sublabel}
+                  </div>
+                )}
+                {lpTab && (
+                  <div className="mt-1">
+                    <RemoveLPButton brand={brand} path={r.key} />
                   </div>
                 )}
               </td>
@@ -325,17 +348,40 @@ export default async function Level2Page({
   const brand = parseBrand(sp.brand);
   const tab = parseLayer2Tab(sp.tab);
   const rows = await getLayer2(brand, period, tab);
+  // For the A/B tab's attach control: the brand's full active-test roster.
+  const abTestOptions =
+    tab === 'abtests'
+      ? (await getActiveTests(brand).catch(() => [])).map((t) => ({
+          id: t.id,
+          name: t.name,
+          type: t.type,
+        }))
+      : [];
   const metricNounByTab: Record<Layer2Tab, 'orders' | 'units' | 'orders attributed'> = {
     watched: 'orders',
+    lps: 'orders',
+    abtests: 'orders',
     pdps: 'orders',
     collections: 'orders',
     cms: 'orders',
     products: 'units',
     attribution: 'orders attributed',
   };
-  const pathKeyedTabs: ReadonlySet<Layer2Tab> = new Set(['watched', 'pdps', 'collections', 'cms']);
+  const pathKeyedTabs: ReadonlySet<Layer2Tab> = new Set([
+    'watched',
+    'lps',
+    'abtests',
+    'pdps',
+    'collections',
+    'cms',
+  ]);
   const showSessions = pathKeyedTabs.has(tab) || tab === 'attribution';
   const showRevenue = tab !== 'attribution';
+  // Per-tab one-line description under the heading.
+  const tabBlurb: Partial<Record<Layer2Tab, string>> = {
+    lps: 'manually-curated landing pages',
+    abtests: 'pages in an active Intelligems test (auto-detected)',
+  };
 
   return (
     <main className="min-h-screen bg-zinc-50 px-6 py-10 dark:bg-black">
@@ -377,7 +423,7 @@ export default async function Level2Page({
                   `Traffic sources · session-level data from ShopifyQL · ${brand}`
                 ) : (
                   <>
-                    {tab === 'watched' ? 'pages on the watch list' : 'top 100 by revenue'} · DTC orders only · {brand}{' '}
+                    {tabBlurb[tab] ?? (tab === 'watched' ? 'pages on the watch list' : 'top 100 by revenue')} · DTC orders only · {brand}{' '}
                     <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 font-semibold text-sky-700 dark:bg-sky-950/60 dark:text-sky-300">
                       <span aria-hidden="true">👉</span>
                       click any page → deep-dive view
@@ -394,15 +440,36 @@ export default async function Level2Page({
               labelFor={(t) => LAYER2_LABELS[t]}
             />
           </div>
+          {tab === 'lps' && (
+            <div className="border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
+              <AddLPInput brand={brand} />
+            </div>
+          )}
+          {tab === 'abtests' && (
+            <div className="border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
+              <div className="mb-1.5 text-[11px] uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                Attach a test to a page — for template/product tests that can&rsquo;t be auto-located
+              </div>
+              <AttachTestToPage brand={brand} tests={abTestOptions} />
+            </div>
+          )}
           <Layer2Table
             rows={rows}
             metricNoun={metricNounByTab[tab]}
-            emptyMessage={`No ${LAYER2_LABELS[tab].toLowerCase()} data in this period for ${brand}.`}
+            emptyMessage={
+              tab === 'lps'
+                ? `No landing pages added yet for ${brand}. Add one above.`
+                : tab === 'abtests'
+                  ? `No active Intelligems A/B tests located to pages for ${brand}.`
+                  : `No ${LAYER2_LABELS[tab].toLowerCase()} data in this period for ${brand}.`
+            }
             period={period}
             brand={brand}
             pathKeyed={pathKeyedTabs.has(tab)}
             showSessions={showSessions}
             showRevenue={showRevenue}
+            lpTab={tab === 'lps'}
+            reorderTab={tab === 'watched'}
           />
         </section>
 
