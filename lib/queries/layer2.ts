@@ -75,7 +75,11 @@ const toRow = (r: RawRow, countNoun: 'orders' | 'units'): Layer2Row => ({
 });
 
 export async function getWatchedPages(brand: Brand, period: Period): Promise<Layer2Row[]> {
-  return getRowsForPaths(brand, period, await getWatchedPaths(brand));
+  const order = await getWatchedPaths(brand); // already in the team's chosen order
+  const rows = await getRowsForPaths(brand, period, order);
+  // getRowsForPaths sorts by revenue; restore the watched display order.
+  const rank = new Map(order.map((p, i) => [p, i]));
+  return [...rows].sort((a, b) => (rank.get(a.key) ?? 1e9) - (rank.get(b.key) ?? 1e9));
 }
 
 // Metrics for an explicit list of paths, force-included even at $0 (LEFT
