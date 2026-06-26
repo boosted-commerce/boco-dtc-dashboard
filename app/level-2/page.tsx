@@ -9,6 +9,7 @@ import {
   type Layer2Tab,
 } from '@/lib/queries/layer2';
 import { AddLPInput, RemoveLPButton } from '@/app/_components/lp-controls';
+import { ProductVariantPicker } from '@/app/_components/product-variant-picker';
 import { ReorderControls } from '@/app/_components/reorder-controls';
 import { AttachTestToPage } from '@/app/_components/attach-test-to-page';
 import { getActiveTests } from '@/lib/intelligems-api';
@@ -278,6 +279,7 @@ function Layer2Table({
                     {r.sublabel}
                   </div>
                 )}
+                {r.variants && <ProductVariantPicker variants={r.variants} />}
                 {lpTab && (
                   <div className="mt-1">
                     <RemoveLPButton brand={brand} path={r.key} />

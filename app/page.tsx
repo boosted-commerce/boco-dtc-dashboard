@@ -35,6 +35,7 @@ import { AttachTestToPage } from '@/app/_components/attach-test-to-page';
 import type { IntelligemsTest } from '@/lib/intelligems-tests';
 import { StarButton } from '@/app/_components/star-button';
 import { ReorderControls } from '@/app/_components/reorder-controls';
+import { ProductVariantPicker } from '@/app/_components/product-variant-picker';
 import { AddWatchedInput } from '@/app/_components/add-watched-input';
 import { HideButton } from '@/app/_components/hide-button';
 import { HiddenManager } from '@/app/_components/hidden-manager';
@@ -1031,6 +1032,7 @@ function Layer2Table({
                     {r.sublabel}
                   </div>
                 )}
+                {r.variants && <ProductVariantPicker variants={r.variants} />}
               </td>
               {starrable && (
                 <td className="max-w-[200px] truncate px-5 py-3 font-mono text-[11px] text-zinc-400 dark:text-zinc-500">
