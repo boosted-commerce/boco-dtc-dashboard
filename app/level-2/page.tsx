@@ -9,6 +9,8 @@ import {
   type Layer2Tab,
 } from '@/lib/queries/layer2';
 import { AddLPInput, RemoveLPButton } from '@/app/_components/lp-controls';
+import { AttachTestToPage } from '@/app/_components/attach-test-to-page';
+import { getActiveTests } from '@/lib/intelligems-api';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -333,6 +335,15 @@ export default async function Level2Page({
   const brand = parseBrand(sp.brand);
   const tab = parseLayer2Tab(sp.tab);
   const rows = await getLayer2(brand, period, tab);
+  // For the A/B tab's attach control: the brand's full active-test roster.
+  const abTestOptions =
+    tab === 'abtests'
+      ? (await getActiveTests(brand).catch(() => [])).map((t) => ({
+          id: t.id,
+          name: t.name,
+          type: t.type,
+        }))
+      : [];
   const metricNounByTab: Record<Layer2Tab, 'orders' | 'units' | 'orders attributed'> = {
     watched: 'orders',
     lps: 'orders',
@@ -419,6 +430,14 @@ export default async function Level2Page({
           {tab === 'lps' && (
             <div className="border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
               <AddLPInput brand={brand} />
+            </div>
+          )}
+          {tab === 'abtests' && (
+            <div className="border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
+              <div className="mb-1.5 text-[11px] uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                Attach a test to a page — for template/product tests that can&rsquo;t be auto-located
+              </div>
+              <AttachTestToPage brand={brand} tests={abTestOptions} />
             </div>
           )}
           <Layer2Table

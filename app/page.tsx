@@ -30,7 +30,8 @@ import { getNorthbeamSummary, type NorthbeamSummary } from '@/lib/queries/northb
 import { getNarrative } from '@/lib/queries/narrative';
 import { clarityHeatmapUrl } from '@/lib/clarity';
 import { getClarityMetrics, type ClarityMetricsMap } from '@/lib/clarity-metrics';
-import { matchIntelligemsTest, getIntelligemsTests } from '@/lib/intelligems-api';
+import { matchIntelligemsTest, getIntelligemsTests, getActiveTests } from '@/lib/intelligems-api';
+import { AttachTestToPage } from '@/app/_components/attach-test-to-page';
 import type { IntelligemsTest } from '@/lib/intelligems-tests';
 import { StarButton } from '@/app/_components/star-button';
 import { AddWatchedInput } from '@/app/_components/add-watched-input';
@@ -1237,6 +1238,15 @@ export default async function Home({
   ]);
   // If we're on the watched tab, layer2Rows IS the watched rows — use it.
   const watchedRows = tab === 'watched' ? layer2Rows : watchedRowsForNarrative;
+  // A/B tab attach control: the brand's full active-test roster (cached).
+  const abTestOptions =
+    tab === 'abtests'
+      ? (await getActiveTests(brand).catch(() => [])).map((t) => ({
+          id: t.id,
+          name: t.name,
+          type: t.type,
+        }))
+      : [];
   const sparkMarkers = promosToMarkers(sparkPromos);
   const sparkBands = promosToBands(sparkPromos);
 
@@ -1580,6 +1590,14 @@ export default async function Home({
                 Add a landing page — paste any URL or path (manually-curated list)
               </div>
               <AddLPInput brand={brand} />
+            </div>
+          )}
+          {tab === 'abtests' && (
+            <div className="border-b border-zinc-200 bg-zinc-50/50 px-5 py-3 dark:border-zinc-800 dark:bg-zinc-900/30">
+              <div className="mb-1.5 text-[11px] uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                Attach a test to a page — for template/product tests that can&rsquo;t be auto-located
+              </div>
+              <AttachTestToPage brand={brand} tests={abTestOptions} />
             </div>
           )}
           {hideable && <HiddenManager brand={brand} entries={hiddenEntries} />}
