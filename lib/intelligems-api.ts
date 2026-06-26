@@ -230,15 +230,16 @@ function staticToActive(brand: Brand): ActiveTest[] {
 // All active tests for a brand (located to paths where possible), cached.
 export async function getActiveTests(brand: Brand): Promise<ActiveTest[]> {
   if (!token(brand)) return staticToActive(brand);
-  return withCache(`intelligems:active:${brand}:v1`, CACHE_TTL_SECONDS, async () => {
+  return withCache(`intelligems:active:${brand}:v2`, CACHE_TTL_SECONDS, async () => {
     try {
       const experiences = await fetchActiveExperiences(brand);
       const mapped = mapToActiveTests(experiences);
-      // If the API yielded nothing locatable, keep the static fallback.
-      const locatable = mapped.some(
-        (t) => t.origins.length || t.destinations.length || t.targetPaths.length,
-      );
-      return locatable ? mapped : staticToActive(brand);
+      // Return real tests even when none are URL-locatable — template /
+      // product tests have empty origins/destinations/targetPaths, but the
+      // team still needs them in the manual attach-by-dropdown flow (and
+      // the A/B tab once attached). Only fall back to the static list when
+      // the API returned nothing at all (no token / outage).
+      return mapped.length > 0 ? mapped : staticToActive(brand);
     } catch (err) {
       console.error(`Intelligems ${brand} fetch failed:`, err);
       return staticToActive(brand);
