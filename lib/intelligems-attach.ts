@@ -86,3 +86,43 @@ export async function detachTest(brand: Brand, path: string, testId: string): Pr
   const ids = (await getAttachedTestIds(brand, path)).filter((id) => id !== testId);
   await redis.hset(key(brand), { [path]: JSON.stringify(ids) });
 }
+
+// Dismissed tests — auto-located tests the team chose to hide from a page's
+// "Active A/B tests" section (e.g. a sitewide test that isn't relevant to
+// this page). Reversible. One HASH per brand at `igdismiss:{brand}` mapping
+// path → JSON id array. Mirrors the attach store above.
+const dismissKey = (brand: Brand) => `igdismiss:${brand}`;
+
+export async function getDismissedTestIds(brand: Brand, path: string): Promise<string[]> {
+  const redis = getRedis();
+  if (!redis) return [];
+  try {
+    const raw = await redis.hget<string[] | string>(dismissKey(brand), path);
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw;
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  } catch (err) {
+    console.error('igdismiss read failed', err);
+    return [];
+  }
+}
+
+export async function dismissTest(brand: Brand, path: string, testId: string): Promise<void> {
+  const redis = getRedis();
+  if (!redis) throw new Error('Dismiss store not configured (UPSTASH_REDIS_REST_URL missing)');
+  const ids = await getDismissedTestIds(brand, path);
+  if (!ids.includes(testId)) ids.push(testId);
+  await redis.hset(dismissKey(brand), { [path]: JSON.stringify(ids) });
+}
+
+export async function undismissTest(brand: Brand, path: string, testId: string): Promise<void> {
+  const redis = getRedis();
+  if (!redis) throw new Error('Dismiss store not configured (UPSTASH_REDIS_REST_URL missing)');
+  const ids = (await getDismissedTestIds(brand, path)).filter((id) => id !== testId);
+  await redis.hset(dismissKey(brand), { [path]: JSON.stringify(ids) });
+}
