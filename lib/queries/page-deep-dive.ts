@@ -400,11 +400,15 @@ async function getVariantBreakdown(
         AND o.CREATED_AT >= b.current_start
         AND o.CREATED_AT < b.today_start
         AND li.PRODUCT_ID = ?
+        -- Page-scoped: only orders that LANDED on this page (matches the
+        -- page's other cards). The product-wide variant view lives on the
+        -- Layer 2 Top Products tab instead.
+        AND REGEXP_REPLACE(SPLIT_PART(o.LANDING_SITE, '?', 1), '(^https?://[^/]+)|/$', '') = ?
       GROUP BY li.VARIANT_ID
       HAVING SUM(li.QUANTITY) > 0
       ORDER BY REVENUE DESC NULLS LAST
     `,
-    [period, brand, product.productId],
+    [period, brand, product.productId, path],
   );
 
   const totalRevenue = rows.reduce((s, r) => s + n(r.REVENUE), 0) || 0;
@@ -440,7 +444,7 @@ export async function getPageDeepDive(
   // Bump the version when the PageDeepDive shape changes so stale cached
   // objects (missing newer fields like activeTests) can't be served.
   return withCache(
-    `deepdive:${brand}:${period}:${encodeURIComponent(path)}:v11`,
+    `deepdive:${brand}:${period}:${encodeURIComponent(path)}:v12`,
     120,
     () => getPageDeepDiveUncached(brand, path, period),
   );
