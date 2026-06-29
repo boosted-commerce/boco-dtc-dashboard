@@ -49,7 +49,9 @@ export type ProductVariantSplit = {
   sku: string | null;
   units: number;
   revenue: number;
+  priorRevenue: number; // prior-period revenue (for the row's vs-prior + trend)
   revenueShare: number; // 0..1 of the product's variant revenue
+  daily: DailyPoint[]; // current-window daily revenue (for the row's sparkline)
 };
 
 type RawRow = {
@@ -429,11 +431,14 @@ type VariantSalesRaw = {
   SKU: string | null;
   UNITS: number | string | null;
   REVENUE: number | string | null;
+  PRIOR_REVENUE: number | string | null;
+  DAILY_JSON: string | null;
 };
 
-// Per-variant units + revenue for a set of product titles (the current
-// window only), keyed back to the product title. Variant titles are
-// resolved via the Admin API (Snowflake has no variant title).
+// Per-variant units + revenue (+ prior revenue + daily series) for a set of
+// product titles, keyed back to the product title, so a Top Products row can
+// swap its whole metric set to a selected variant. Variant titles resolved
+// via the Admin API (Snowflake has no variant title).
 async function getVariantsForProducts(
   brand: Brand,
   period: Period,
@@ -447,28 +452,72 @@ async function getVariantsForProducts(
       WITH bounds AS (
         SELECT
           DATE_TRUNC('day', CURRENT_TIMESTAMP()) AS today_start,
-          DATEADD(day, -?, DATE_TRUNC('day', CURRENT_TIMESTAMP())) AS current_start
+          DATEADD(day, -?, DATE_TRUNC('day', CURRENT_TIMESTAMP())) AS current_start,
+          DATEADD(day, -?, DATE_TRUNC('day', CURRENT_TIMESTAMP())) AS prior_start
+      ),
+      base AS (
+        SELECT
+          li.TITLE AS product,
+          li.PRODUCT_ID,
+          li.VARIANT_ID,
+          li.SKU,
+          li.QUANTITY,
+          li.PRICE_AMOUNT,
+          o.CREATED_AT
+        FROM DW_ANALYTICS.FACT.SHOPIFY_ORDERS_RD_ORDERS_ITEMS li
+        JOIN DW_ANALYTICS.FACT.SHOPIFY_ORDERS_RD_ORDERS o ON li.ORDER_ID = o.ID
+        , bounds b
+        WHERE o.BRAND = ?
+          AND o.SOURCE_NAME = 'web'
+          AND (o.IS_FAIRE_ORDER = FALSE OR o.IS_FAIRE_ORDER IS NULL)
+          AND o.CREATED_AT >= b.prior_start
+          AND o.CREATED_AT < b.today_start
+          AND li.TITLE IN (${placeholders})
+      ),
+      agg AS (
+        SELECT
+          base.product,
+          ANY_VALUE(base.PRODUCT_ID) AS product_id,
+          base.VARIANT_ID,
+          ANY_VALUE(base.SKU) AS sku,
+          SUM(IFF(base.CREATED_AT >= b.current_start, base.QUANTITY, 0)) AS units,
+          SUM(IFF(base.CREATED_AT >= b.current_start, base.QUANTITY * base.PRICE_AMOUNT, 0)) AS revenue,
+          SUM(IFF(base.CREATED_AT < b.current_start, base.QUANTITY * base.PRICE_AMOUNT, 0)) AS prior_revenue
+        FROM base, bounds b
+        GROUP BY base.product, base.VARIANT_ID
+        HAVING SUM(IFF(base.CREATED_AT >= b.current_start, base.QUANTITY, 0)) > 0
+      ),
+      daily AS (
+        SELECT
+          base.product,
+          base.VARIANT_ID,
+          TO_VARCHAR(DATE(base.CREATED_AT), 'YYYY-MM-DD') AS d,
+          SUM(base.QUANTITY * base.PRICE_AMOUNT) AS v
+        FROM base, bounds b
+        WHERE base.CREATED_AT >= b.current_start
+        GROUP BY base.product, base.VARIANT_ID, DATE(base.CREATED_AT)
+      ),
+      sparks AS (
+        SELECT
+          product,
+          VARIANT_ID,
+          ARRAY_AGG(OBJECT_CONSTRUCT('d', d, 'v', v)) WITHIN GROUP (ORDER BY d) AS daily_series
+        FROM daily
+        GROUP BY product, VARIANT_ID
       )
       SELECT
-        li.TITLE AS PRODUCT,
-        ANY_VALUE(li.PRODUCT_ID) AS PRODUCT_ID,
-        li.VARIANT_ID AS VARIANT_ID,
-        ANY_VALUE(li.SKU) AS SKU,
-        SUM(li.QUANTITY) AS UNITS,
-        SUM(li.QUANTITY * li.PRICE_AMOUNT) AS REVENUE
-      FROM DW_ANALYTICS.FACT.SHOPIFY_ORDERS_RD_ORDERS_ITEMS li
-      JOIN DW_ANALYTICS.FACT.SHOPIFY_ORDERS_RD_ORDERS o ON li.ORDER_ID = o.ID
-      , bounds b
-      WHERE o.BRAND = ?
-        AND o.SOURCE_NAME = 'web'
-        AND (o.IS_FAIRE_ORDER = FALSE OR o.IS_FAIRE_ORDER IS NULL)
-        AND o.CREATED_AT >= b.current_start
-        AND o.CREATED_AT < b.today_start
-        AND li.TITLE IN (${placeholders})
-      GROUP BY li.TITLE, li.VARIANT_ID
-      HAVING SUM(li.QUANTITY) > 0
+        a.product AS PRODUCT,
+        a.product_id AS PRODUCT_ID,
+        a.VARIANT_ID AS VARIANT_ID,
+        a.sku AS SKU,
+        a.units AS UNITS,
+        a.revenue AS REVENUE,
+        a.prior_revenue AS PRIOR_REVENUE,
+        TO_VARCHAR(s.daily_series) AS DAILY_JSON
+      FROM agg a
+      LEFT JOIN sparks s ON a.product = s.product AND a.VARIANT_ID = s.VARIANT_ID
     `,
-    [period, brand, ...titles],
+    [period, period * 2, brand, ...titles],
   );
 
   // Resolve variant titles for the products we saw (batched Admin lookup).
@@ -504,7 +553,9 @@ async function getVariantsForProducts(
           sku,
           units: n(r.UNITS),
           revenue,
+          priorRevenue: n(r.PRIOR_REVENUE),
           revenueShare: total > 0 ? revenue / total : 0,
+          daily: parseDaily(r.DAILY_JSON),
         };
       })
       .sort((a, b) => b.revenue - a.revenue);
