@@ -709,7 +709,7 @@ export default async function PageDeepDivePage({
                 Variant breakdown
               </div>
               <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                Which variant drives sales · all web orders containing this product · {period}-day window
+                Which variant drives sales · orders that landed on this page · {period}-day window
               </div>
             </div>
             <div className="overflow-x-auto">
