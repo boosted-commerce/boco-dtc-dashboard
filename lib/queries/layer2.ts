@@ -2,7 +2,7 @@ import { execute } from '@/lib/snowflake';
 import { withCache } from '@/lib/cache';
 import type { Brand, DailyPoint, Period } from '@/lib/queries/orders';
 import { getWatchedPaths, getHiddenPaths, getPinnedPaths, getLPPaths } from '@/lib/watched-store';
-import { getChannelSessions, getSessionsByPath } from '@/lib/shopify';
+import { getChannelSessions, getSessionsByPath, getProductVariantTitles, type ProductVariantTitles } from '@/lib/shopify';
 import { getActiveTests } from '@/lib/intelligems-api';
 import { getAllAttachedPaths } from '@/lib/intelligems-attach';
 
@@ -37,6 +37,21 @@ export type Layer2Row = {
   // True when this row is force-included via the pinned list (shows even
   // if it isn't top-by-revenue), rather than discovered organically.
   pinned?: boolean;
+  // Top Products only: per-variant split for products with >1 variant, so
+  // the row can offer a "view by variant" dropdown. Units + revenue only
+  // (variants have no page sessions).
+  variants?: ProductVariantSplit[];
+};
+
+export type ProductVariantSplit = {
+  variantId: string;
+  title: string; // variant title, or SKU/#id fallback
+  sku: string | null;
+  units: number;
+  revenue: number;
+  priorRevenue: number; // prior-period revenue (for the row's vs-prior + trend)
+  revenueShare: number; // 0..1 of the product's variant revenue
+  daily: DailyPoint[]; // current-window daily revenue (for the row's sparkline)
 };
 
 type RawRow = {
@@ -397,7 +412,156 @@ export async function getTopProductsBySales(
     `,
     [period, period * 2, brand],
   );
-  return rows.map((r) => toRow(r, 'units'));
+  const productRows = rows.map((r) => toRow(r, 'units'));
+  const variantsByProduct = await getVariantsForProducts(
+    brand,
+    period,
+    productRows.map((r) => r.key),
+  ).catch(() => new Map<string, ProductVariantSplit[]>());
+  return productRows.map((r) => {
+    const variants = variantsByProduct.get(r.key);
+    return variants && variants.length > 1 ? { ...r, variants } : r;
+  });
+}
+
+type VariantSalesRaw = {
+  PRODUCT: string | null;
+  PRODUCT_ID: string | null;
+  VARIANT_ID: string | null;
+  SKU: string | null;
+  UNITS: number | string | null;
+  REVENUE: number | string | null;
+  PRIOR_REVENUE: number | string | null;
+  DAILY_JSON: string | null;
+};
+
+// Per-variant units + revenue (+ prior revenue + daily series) for a set of
+// product titles, keyed back to the product title, so a Top Products row can
+// swap its whole metric set to a selected variant. Variant titles resolved
+// via the Admin API (Snowflake has no variant title).
+async function getVariantsForProducts(
+  brand: Brand,
+  period: Period,
+  productTitles: string[],
+): Promise<Map<string, ProductVariantSplit[]>> {
+  const titles = [...new Set(productTitles.filter(Boolean))];
+  if (titles.length === 0) return new Map();
+  const placeholders = titles.map(() => '?').join(', ');
+  const rows = await execute<VariantSalesRaw>(
+    `
+      WITH bounds AS (
+        SELECT
+          DATE_TRUNC('day', CURRENT_TIMESTAMP()) AS today_start,
+          DATEADD(day, -?, DATE_TRUNC('day', CURRENT_TIMESTAMP())) AS current_start,
+          DATEADD(day, -?, DATE_TRUNC('day', CURRENT_TIMESTAMP())) AS prior_start
+      ),
+      base AS (
+        SELECT
+          li.TITLE AS product,
+          li.PRODUCT_ID,
+          li.VARIANT_ID,
+          li.SKU,
+          li.QUANTITY,
+          li.PRICE_AMOUNT,
+          o.CREATED_AT
+        FROM DW_ANALYTICS.FACT.SHOPIFY_ORDERS_RD_ORDERS_ITEMS li
+        JOIN DW_ANALYTICS.FACT.SHOPIFY_ORDERS_RD_ORDERS o ON li.ORDER_ID = o.ID
+        , bounds b
+        WHERE o.BRAND = ?
+          AND o.SOURCE_NAME = 'web'
+          AND (o.IS_FAIRE_ORDER = FALSE OR o.IS_FAIRE_ORDER IS NULL)
+          AND o.CREATED_AT >= b.prior_start
+          AND o.CREATED_AT < b.today_start
+          AND li.TITLE IN (${placeholders})
+      ),
+      agg AS (
+        SELECT
+          base.product,
+          ANY_VALUE(base.PRODUCT_ID) AS product_id,
+          base.VARIANT_ID,
+          ANY_VALUE(base.SKU) AS sku,
+          SUM(IFF(base.CREATED_AT >= b.current_start, base.QUANTITY, 0)) AS units,
+          SUM(IFF(base.CREATED_AT >= b.current_start, base.QUANTITY * base.PRICE_AMOUNT, 0)) AS revenue,
+          SUM(IFF(base.CREATED_AT < b.current_start, base.QUANTITY * base.PRICE_AMOUNT, 0)) AS prior_revenue
+        FROM base, bounds b
+        GROUP BY base.product, base.VARIANT_ID
+        HAVING SUM(IFF(base.CREATED_AT >= b.current_start, base.QUANTITY, 0)) > 0
+      ),
+      daily AS (
+        SELECT
+          base.product,
+          base.VARIANT_ID,
+          TO_VARCHAR(DATE(base.CREATED_AT), 'YYYY-MM-DD') AS d,
+          SUM(base.QUANTITY * base.PRICE_AMOUNT) AS v
+        FROM base, bounds b
+        WHERE base.CREATED_AT >= b.current_start
+        GROUP BY base.product, base.VARIANT_ID, DATE(base.CREATED_AT)
+      ),
+      sparks AS (
+        SELECT
+          product,
+          VARIANT_ID,
+          ARRAY_AGG(OBJECT_CONSTRUCT('d', d, 'v', v)) WITHIN GROUP (ORDER BY d) AS daily_series
+        FROM daily
+        GROUP BY product, VARIANT_ID
+      )
+      SELECT
+        a.product AS PRODUCT,
+        a.product_id AS PRODUCT_ID,
+        a.VARIANT_ID AS VARIANT_ID,
+        a.sku AS SKU,
+        a.units AS UNITS,
+        a.revenue AS REVENUE,
+        a.prior_revenue AS PRIOR_REVENUE,
+        TO_VARCHAR(s.daily_series) AS DAILY_JSON
+      FROM agg a
+      LEFT JOIN sparks s ON a.product = s.product AND a.VARIANT_ID = s.VARIANT_ID
+    `,
+    [period, period * 2, brand, ...titles],
+  );
+
+  // Resolve variant titles for the products we saw (batched Admin lookup).
+  const productIds = [...new Set(rows.map((r) => r.PRODUCT_ID).filter(Boolean).map(String))];
+  const titleMap = await getProductVariantTitles(brand, productIds).catch(
+    () => ({} as ProductVariantTitles),
+  );
+
+  // Group variant rows by product title.
+  const byProduct = new Map<string, VariantSalesRaw[]>();
+  for (const r of rows) {
+    const key = r.PRODUCT ?? '';
+    if (!key) continue;
+    (byProduct.get(key) ?? byProduct.set(key, []).get(key)!).push(r);
+  }
+
+  const out = new Map<string, ProductVariantSplit[]>();
+  for (const [product, vRows] of byProduct) {
+    const total = vRows.reduce((s, r) => s + n(r.REVENUE), 0) || 0;
+    const variants: ProductVariantSplit[] = vRows
+      .map((r) => {
+        const variantId = r.VARIANT_ID ? String(r.VARIANT_ID) : '';
+        const pid = r.PRODUCT_ID ? String(r.PRODUCT_ID) : '';
+        const meta = titleMap[pid]?.[variantId];
+        const sku = meta?.sku ?? (r.SKU || null);
+        const title =
+          meta?.title?.trim() ||
+          (sku ? `SKU ${sku}` : variantId ? `Variant #${variantId}` : 'Unknown variant');
+        const revenue = n(r.REVENUE);
+        return {
+          variantId,
+          title,
+          sku,
+          units: n(r.UNITS),
+          revenue,
+          priorRevenue: n(r.PRIOR_REVENUE),
+          revenueShare: total > 0 ? revenue / total : 0,
+          daily: parseDaily(r.DAILY_JSON),
+        };
+      })
+      .sort((a, b) => b.revenue - a.revenue);
+    out.set(product, variants);
+  }
+  return out;
 }
 
 // ShopifyQL-sourced Channel Attribution. Replaces the previous

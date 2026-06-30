@@ -383,6 +383,55 @@ export async function getProductVariants(
   ).catch(() => null);
 }
 
+// Variant titles keyed by product id → variant id, for a set of product
+// ids (the Layer 2 Top Products tab). Batched Admin `nodes` lookups (100
+// products/call), cached for the (fairly stable) top-product set. Snowflake
+// line items carry VARIANT_ID/SKU but no title, so we resolve here.
+export type ProductVariantTitles = Record<string, Record<string, { title: string; sku: string | null }>>;
+
+async function fetchProductVariantTitles(brand: Brand, ids: string[]): Promise<ProductVariantTitles> {
+  const out: ProductVariantTitles = {};
+  for (let i = 0; i < ids.length; i += 100) {
+    const chunk = ids.slice(i, i + 100).map((id) => `gid://shopify/Product/${id}`);
+    const data = await runAdminGraphQL(
+      brand,
+      `query($ids:[ID!]!){
+        nodes(ids:$ids){
+          ... on Product { id variants(first:100){ nodes{ id title sku } } }
+        }
+      }`,
+      { ids: chunk },
+    );
+    const nodes = data?.nodes as
+      | Array<{ id?: string; variants?: { nodes?: Array<{ id?: string; title?: string; sku?: string }> } } | null>
+      | undefined;
+    for (const node of nodes ?? []) {
+      const pid = gidToNumeric(node?.id);
+      if (!pid) continue;
+      const vmap: Record<string, { title: string; sku: string | null }> = {};
+      for (const v of node?.variants?.nodes ?? []) {
+        const vid = gidToNumeric(v.id);
+        if (vid) vmap[vid] = { title: v.title ?? '', sku: v.sku || null };
+      }
+      out[pid] = vmap;
+    }
+  }
+  return out;
+}
+
+export async function getProductVariantTitles(
+  brand: Brand,
+  productIds: string[],
+): Promise<ProductVariantTitles> {
+  const ids = [...new Set(productIds.filter(Boolean).map(String))];
+  if (ids.length === 0) return {};
+  return withCache(
+    `pvtitles:${brand}:${ids.slice().sort().join('.')}`,
+    7 * 24 * 60 * 60,
+    () => fetchProductVariantTitles(brand, ids),
+  ).catch(() => ({}));
+}
+
 // Strip protocol + host + query string + fragment so a ShopifyQL
 // landing_page_url ("https://www.asterwood.co/products/foo?srsltid=...")
 // reduces to the Snowflake-style path ("/products/foo") that the rest of

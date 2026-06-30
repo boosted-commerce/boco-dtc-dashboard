@@ -9,6 +9,7 @@ import {
   type Layer2Tab,
 } from '@/lib/queries/layer2';
 import { AddLPInput, RemoveLPButton } from '@/app/_components/lp-controls';
+import { TopProductRow } from '@/app/_components/top-product-row';
 import { ReorderControls } from '@/app/_components/reorder-controls';
 import { AttachTestToPage } from '@/app/_components/attach-test-to-page';
 import { getActiveTests } from '@/lib/intelligems-api';
@@ -230,6 +231,23 @@ function Layer2Table({
       </thead>
       <tbody>
         {rows.map((r, i) => {
+          // Top Products rows with a variant split render as a self-contained
+          // client row so selecting a variant swaps the whole row's metrics.
+          if (r.variants && r.variants.length > 1) {
+            return (
+              <TopProductRow
+                key={r.key}
+                label={r.label}
+                product={{
+                  units: r.currentCount,
+                  revenue: r.currentRevenue,
+                  priorRevenue: r.priorRevenue,
+                  daily: r.daily,
+                }}
+                variants={r.variants}
+              />
+            );
+          }
           // For sessions-only tabs (Channel Attribution), trend on sessions
           // vs prior_sessions — revenue is always $0 on those rows.
           const currentForTrend = showRevenue ? r.currentRevenue : r.sessions ?? 0;
