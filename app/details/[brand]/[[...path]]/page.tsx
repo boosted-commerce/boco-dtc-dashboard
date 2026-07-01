@@ -15,6 +15,7 @@ import { HistoryPicker } from '@/app/_components/history-picker';
 import { RefreshIntelligems } from '@/app/_components/refresh-intelligems';
 import { AttachTestPicker, DetachButton } from '@/app/_components/attach-test';
 import { DismissTestButton, RestoreTestButton } from '@/app/_components/dismiss-test';
+import { ChannelCards } from '@/app/_components/channel-cards';
 import type { ExperienceResults } from '@/lib/intelligems-api';
 import { Sparkline, type SparklineBand } from '@/app/_components/sparkline';
 import { fmt, type Format } from '@/lib/format';
@@ -651,55 +652,23 @@ export default async function PageDeepDivePage({
           )}
         </section>
 
-        {/* Core metric cards — all full Layer-1-style rich cards. */}
-        <section className="mb-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-          <RichMetricCard
-            title={`Sessions · ${period}d`}
-            bucket={data.sessionsBucket}
-            kind="count"
-            sparklineColor="text-sky-600 dark:text-sky-400"
-            bands={promoBands}
-          />
-          <RichMetricCard
-            title={`Conv rate · ${period}d`}
-            bucket={data.convRateBucket}
-            kind="percent"
-            sparklineColor="text-sky-600 dark:text-sky-400"
-            bands={promoBands}
-          />
-        </section>
-        <section className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-2">
-          <RichMetricCard
-            title={`Orders · ${period}d`}
-            bucket={data.orderBucket}
-            kind="count"
-            sparklineColor="text-emerald-600 dark:text-emerald-400"
-            bands={promoBands}
-          />
-          <RichMetricCard
-            title={`Revenue · ${period}d`}
-            bucket={data.revenueBucket}
-            kind="currency"
-            sparklineColor="text-emerald-600 dark:text-emerald-400"
-            bands={promoBands}
-          />
-          <RichMetricCard
-            title={`AOV · ${period}d`}
-            bucket={deriveAovBucket(data.orderBucket, data.revenueBucket)}
-            kind="aov"
-            sparklineColor="text-blue-600 dark:text-blue-400"
-            bands={promoBands}
-          />
-          {/* Subscription revenue landed on this page (web subscription
-              orders). Always shown ($0 where none), like AOV. */}
-          <RichMetricCard
-            title={`Subscription rev (landed here) · ${period}d`}
-            bucket={data.subRevenueBucket}
-            kind="currency"
-            sparklineColor="text-purple-600 dark:text-purple-400"
-            bands={promoBands}
-          />
-        </section>
+        {/* Core metric cards — full Layer-1-style rich cards, with a
+            channel filter above them. "All channels" = page totals; picking
+            a channel re-scopes the cards (see ChannelCards for the exact vs
+            allocated breakdown). */}
+        <ChannelCards
+          all={{
+            sessions: data.sessionsBucket,
+            convRate: data.convRateBucket,
+            orders: data.orderBucket,
+            revenue: data.revenueBucket,
+            aov: deriveAovBucket(data.orderBucket, data.revenueBucket),
+            subRevenue: data.subRevenueBucket,
+          }}
+          channels={data.channelCards}
+          period={period}
+          bands={promoBands}
+        />
 
         {/* Per-variant sales composition (PDPs with a variant split). */}
         {data.variants.length > 1 && (
