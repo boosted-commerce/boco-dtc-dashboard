@@ -73,6 +73,23 @@ export async function GET(request: NextRequest) {
       )
     : `No Shopify creds for ${brand}`;
 
+  // Can ShopifyQL's `sales` dataset give us orders/revenue by source (and
+  // by landing page)? If so, we use Shopify's native attribution (referrer_
+  // name) instead of the sparse Snowflake UTM extraction — matching what the
+  // Shopify UI shows, incl. Instagram/TikTok sales.
+  const salesProbes = creds
+    ? await Promise.all(
+        [
+          `FROM sales SHOW net_sales, orders GROUP BY referrer_name SINCE -28d UNTIL today ORDER BY net_sales DESC LIMIT 15`,
+          `FROM sales SHOW net_sales, orders GROUP BY referrer_name, landing_page_path SINCE -28d UNTIL today ORDER BY net_sales DESC LIMIT 15`,
+          `FROM sales SHOW total_sales, orders GROUP BY referrer_name SINCE -28d UNTIL today ORDER BY total_sales DESC LIMIT 15`,
+        ].map(async (q) => {
+          const r = await shopifyql(creds.shop, creds.token, q);
+          return { query: q, parseErrors: r?.parseErrors ?? null, rows: r?.tableData?.rows ?? null };
+        }),
+      )
+    : null;
+
   // Snowflake order-side UTM sources for this path (what we'd use for
   // order/revenue-by-source). Uses the same LANDING_SITE utm extraction as
   // the Channel Attribution tab.
@@ -100,5 +117,5 @@ export async function GET(request: NextRequest) {
     orderUtmSources = { error: err instanceof Error ? err.message : String(err) };
   }
 
-  return Response.json({ brand, path: path ?? '(all pages)', shopifyDims, orderUtmSources });
+  return Response.json({ brand, path: path ?? '(all pages)', shopifyDims, salesProbes, orderUtmSources });
 }
