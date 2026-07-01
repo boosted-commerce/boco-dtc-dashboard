@@ -599,12 +599,33 @@ export async function getPageSessionTimeSeries(
 // where conversion concentrates (e.g. "Meta: 3,200 sessions @ 0.4%
 // vs Direct: 1,400 @ 2.8%").
 export type SourceBreakdownRow = {
-  source: string;
+  source: string; // normalized channel label (Facebook / Instagram / TikTok / …)
   sessions: number;
   convRate: number; // percent
+  orders: number; // implied orders = sessions × conv (exact from Shopify sessions)
+  revenue: number; // page revenue allocated by converting-session share (set in page-deep-dive)
   priorSessions: number;
   priorConvRate: number;
 };
+
+// Normalize Shopify's `referring_channel` values into readable channels so
+// paid/organic social split out (Facebook / Instagram / TikTok) instead of a
+// single "social" bucket. Long tail collapses to Other.
+export function channelForReferrer(raw: string | null | undefined): string {
+  const s = String(raw ?? '').toLowerCase().trim();
+  if (!s || s === '(null)' || s === 'null' || s === 'direct' || s === 'unattributed' || s === 'unknown') return 'Direct';
+  if (s.includes('facebook') || s === 'fb' || s === 'meta') return 'Facebook';
+  if (s.includes('instagram') || s === 'ig' || s.includes('igshopping')) return 'Instagram';
+  if (s.includes('tiktok')) return 'TikTok';
+  if (s.includes('google') || s === 'syndicatedsearch') return 'Google';
+  if (s.includes('bing') || s.includes('yahoo') || s.includes('duckduckgo') || s.includes('ecosia') || s.includes('brave') || s.includes('naver')) return 'Search (other)';
+  if (s.includes('klaviyo') || s.includes('gmail') || s.includes('email')) return 'Email';
+  if (s.includes('chatgpt') || s.includes('perplexity') || s.includes('openai') || s.includes('gemini')) return 'AI';
+  if (s.includes('pinterest')) return 'Pinterest';
+  if (s.includes('reddit')) return 'Reddit';
+  if (s.includes('youtube')) return 'YouTube';
+  return 'Other';
+}
 
 export async function getSourceByPath(
   brand: Brand,
@@ -614,11 +635,11 @@ export async function getSourceByPath(
   const [cur, prior] = await Promise.all([
     runShopifyQL(
       brand,
-      `FROM sessions SHOW sessions, conversion_rate GROUP BY referrer_source, landing_page_path SINCE -${period}d UNTIL today ORDER BY sessions DESC LIMIT 1000`,
+      `FROM sessions SHOW sessions, conversion_rate GROUP BY referring_channel, landing_page_path SINCE -${period}d UNTIL today ORDER BY sessions DESC LIMIT 1000`,
     ),
     runShopifyQL(
       brand,
-      `FROM sessions SHOW sessions, conversion_rate GROUP BY referrer_source, landing_page_path SINCE -${period * 2}d UNTIL -${period}d ORDER BY sessions DESC LIMIT 1000`,
+      `FROM sessions SHOW sessions, conversion_rate GROUP BY referring_channel, landing_page_path SINCE -${period * 2}d UNTIL -${period}d ORDER BY sessions DESC LIMIT 1000`,
     ),
   ]);
   if (!cur) return [];
@@ -631,13 +652,13 @@ export async function getSourceByPath(
     for (const r of table.rows) {
       const rowPath = String(r.landing_page_path ?? '');
       if (rowPath !== path) continue;
-      const source = String(r.referrer_source ?? '(direct)');
+      const channel = channelForReferrer(r.referring_channel as string | null);
       const sessions = Number(r.sessions) || 0;
       const cr = Number(r.conversion_rate) || 0;
-      const existing = map.get(source) ?? { sessions: 0, ordersImplied: 0 };
+      const existing = map.get(channel) ?? { sessions: 0, ordersImplied: 0 };
       existing.sessions += sessions;
       existing.ordersImplied += sessions * cr;
-      map.set(source, existing);
+      map.set(channel, existing);
     }
     return map;
   };
@@ -652,6 +673,8 @@ export async function getSourceByPath(
       source,
       sessions: c.sessions,
       convRate: c.sessions > 0 ? (c.ordersImplied / c.sessions) * 100 : 0,
+      orders: Math.round(c.ordersImplied),
+      revenue: 0, // allocated later (needs the page's Snowflake revenue total)
       priorSessions: p.sessions,
       priorConvRate: p.sessions > 0 ? (p.ordersImplied / p.sessions) * 100 : 0,
     });

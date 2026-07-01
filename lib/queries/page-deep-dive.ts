@@ -444,7 +444,7 @@ export async function getPageDeepDive(
   // Bump the version when the PageDeepDive shape changes so stale cached
   // objects (missing newer fields like activeTests) can't be served.
   return withCache(
-    `deepdive:${brand}:${period}:${encodeURIComponent(path)}:v12`,
+    `deepdive:${brand}:${period}:${encodeURIComponent(path)}:v13`,
     120,
     () => getPageDeepDiveUncached(brand, path, period),
   );
@@ -501,6 +501,19 @@ async function getPageDeepDiveUncached(
     getEndedTests(brand).catch(() => [] as ActiveTest[]),
     getVariantBreakdown(brand, path, period).catch(() => [] as VariantSalesRow[]),
   ]);
+
+  // Allocate the page's real (Snowflake) revenue across channels in
+  // proportion to each channel's converting sessions (implied orders).
+  // Shopify can't give per-page revenue-by-channel, so this first-touch
+  // model distributes the page's actual revenue — it sums to orders.currentRev.
+  const totalImpliedOrders = sourceBreakdown.reduce((s, r) => s + r.orders, 0);
+  const sourceBreakdownWithRev =
+    totalImpliedOrders > 0
+      ? sourceBreakdown.map((r) => ({
+          ...r,
+          revenue: orders.currentRev * (r.orders / totalImpliedOrders),
+        }))
+      : sourceBreakdown;
 
   // ShopifyQL session metrics for this path. The prior-period numbers
   // we don't have separately, so leave them zero for now — vs-prior on
@@ -615,7 +628,7 @@ async function getPageDeepDiveUncached(
       yesterday: { orders: orders.ydayCount, revenue: orders.ydayRev },
       dayBefore: { orders: orders.dbeforeCount, revenue: orders.dbeforeRev },
     },
-    sourceBreakdown,
+    sourceBreakdown: sourceBreakdownWithRev,
     clarity: clarityMap.get(path) ?? null,
     activePromos,
     intelligemsTest,
