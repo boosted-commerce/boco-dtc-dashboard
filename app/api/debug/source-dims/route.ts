@@ -80,9 +80,18 @@ export async function GET(request: NextRequest) {
   const salesProbes = creds
     ? await Promise.all(
         [
-          `FROM sales SHOW net_sales, orders GROUP BY referrer_name SINCE -28d UNTIL today ORDER BY net_sales DESC LIMIT 15`,
-          `FROM sales SHOW net_sales, orders GROUP BY referrer_name, landing_page_path SINCE -28d UNTIL today ORDER BY net_sales DESC LIMIT 15`,
-          `FROM sales SHOW total_sales, orders GROUP BY referrer_name SINCE -28d UNTIL today ORDER BY total_sales DESC LIMIT 15`,
+          // Does the sessions dataset expose a revenue metric? (jackpot: then
+          // sessions gives sessions + conv + revenue by referrer_name + page)
+          `FROM sessions SHOW sessions, total_sales GROUP BY referrer_name SINCE -28d UNTIL today ORDER BY sessions DESC LIMIT 5`,
+          `FROM sessions SHOW sessions, net_sales GROUP BY referrer_name SINCE -28d UNTIL today ORDER BY sessions DESC LIMIT 5`,
+          // What source dimension names does the sales dataset accept?
+          `FROM sales SHOW total_sales, orders GROUP BY referrer_source SINCE -28d UNTIL today ORDER BY total_sales DESC LIMIT 15`,
+          `FROM sales SHOW total_sales, orders GROUP BY referring_channel SINCE -28d UNTIL today ORDER BY total_sales DESC LIMIT 15`,
+          `FROM sales SHOW total_sales, orders GROUP BY utm_source SINCE -28d UNTIL today ORDER BY total_sales DESC LIMIT 15`,
+          `FROM sales SHOW total_sales, orders GROUP BY marketing_channel SINCE -28d UNTIL today ORDER BY total_sales DESC LIMIT 15`,
+          `FROM sales SHOW total_sales, orders GROUP BY sales_channel SINCE -28d UNTIL today ORDER BY total_sales DESC LIMIT 15`,
+          // Does sales support landing_page_url (vs _path)?
+          `FROM sales SHOW total_sales, orders GROUP BY referrer_source, landing_page_url SINCE -28d UNTIL today ORDER BY total_sales DESC LIMIT 5`,
         ].map(async (q) => {
           const r = await shopifyql(creds.shop, creds.token, q);
           return { query: q, parseErrors: r?.parseErrors ?? null, rows: r?.tableData?.rows ?? null };
