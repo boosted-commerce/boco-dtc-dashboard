@@ -103,6 +103,9 @@ export type PageDeepDive = {
   // — all web orders containing the product in the window, regardless of
   // landing page). Empty for non-product pages or single-variant products.
   variants: VariantSalesRow[];
+  // Per-channel rich-card data for the "filter by channel" dropdown above
+  // the cards. One entry per traffic channel on this page.
+  channelCards: ChannelCard[];
 };
 
 export type VariantSalesRow = {
@@ -128,6 +131,60 @@ type OrdersRow = {
 };
 
 const n = (v: unknown): number => Number(v ?? 0) || 0;
+
+// Per-channel version of the rich cards, for the Layer 3 channel filter.
+export type ChannelCard = {
+  channel: string;
+  sessions: Bucket;
+  convRate: Bucket;
+  orders: Bucket;
+  revenue: Bucket;
+  aov: Bucket;
+};
+
+// Build per-channel buckets from the (real) per-channel current/prior totals
+// plus the page-level daily series (scaled to each channel's session share
+// for the sparkline shape). Year-ago left at 0 — not available per channel.
+function buildChannelCards(
+  sources: SourceBreakdownRow[],
+  page: { sessions: Bucket; convRate: Bucket; orders: Bucket; revenue: Bucket },
+): ChannelCard[] {
+  const totalCur = sources.reduce((s, r) => s + r.sessions, 0);
+  const totalPrior = sources.reduce((s, r) => s + r.priorSessions, 0);
+  const scale = (daily: DailyPoint[], f: number): DailyPoint[] =>
+    daily.map((p) => ({ date: p.date, value: p.value * f }));
+  const last = (d: DailyPoint[]) => (d.length ? d[d.length - 1].value : 0);
+  const last7 = (d: DailyPoint[]) => d.slice(-7).reduce((s, p) => s + p.value, 0);
+  const bucket = (current: number, prior: number, daily: DailyPoint[]): Bucket => ({
+    current,
+    prior,
+    yesterday: last(daily),
+    sevenDayTotal: last7(daily),
+    yearAgo: 0,
+    daily,
+  });
+
+  return sources.map((r) => {
+    const shareCur = totalCur > 0 ? r.sessions / totalCur : 0;
+    const sharePrior = totalPrior > 0 ? r.priorSessions / totalPrior : 0;
+    const priorOrders = r.priorSessions * (r.priorConvRate / 100);
+    const priorRevenue = page.revenue.prior * sharePrior;
+    const sessions = bucket(r.sessions, r.priorSessions, scale(page.sessions.daily, shareCur));
+    const orders = bucket(r.orders, priorOrders, scale(page.orders.daily, shareCur));
+    const revenue = bucket(r.revenue, priorRevenue, scale(page.revenue.daily, shareCur));
+    // Conversion is a rate — not scalable; reuse the page conv trend as shape.
+    const convRate = bucket(r.convRate, r.priorConvRate, page.convRate.daily);
+    const aov = bucket(
+      r.orders > 0 ? r.revenue / r.orders : 0,
+      priorOrders > 0 ? priorRevenue / priorOrders : 0,
+      revenue.daily.map((p, i) => {
+        const o = orders.daily[i]?.value ?? 0;
+        return { date: p.date, value: o > 0 ? p.value / o : 0 };
+      }),
+    );
+    return { channel: r.source, sessions, convRate, orders, revenue, aov };
+  });
+}
 
 async function getOrdersForPath(
   brand: Brand,
@@ -444,7 +501,7 @@ export async function getPageDeepDive(
   // Bump the version when the PageDeepDive shape changes so stale cached
   // objects (missing newer fields like activeTests) can't be served.
   return withCache(
-    `deepdive:${brand}:${period}:${encodeURIComponent(path)}:v12`,
+    `deepdive:${brand}:${period}:${encodeURIComponent(path)}:v13`,
     120,
     () => getPageDeepDiveUncached(brand, path, period),
   );
@@ -502,6 +559,19 @@ async function getPageDeepDiveUncached(
     getVariantBreakdown(brand, path, period).catch(() => [] as VariantSalesRow[]),
   ]);
 
+  // Allocate the page's real (Snowflake) revenue across channels in
+  // proportion to each channel's converting sessions (implied orders).
+  // Shopify can't give per-page revenue-by-channel, so this first-touch
+  // model distributes the page's actual revenue — it sums to orders.currentRev.
+  const totalImpliedOrders = sourceBreakdown.reduce((s, r) => s + r.orders, 0);
+  const sourceBreakdownWithRev =
+    totalImpliedOrders > 0
+      ? sourceBreakdown.map((r) => ({
+          ...r,
+          revenue: orders.currentRev * (r.orders / totalImpliedOrders),
+        }))
+      : sourceBreakdown;
+
   // ShopifyQL session metrics for this path. The prior-period numbers
   // we don't have separately, so leave them zero for now — vs-prior on
   // sessions will read as "new" but vs-prior on orders/revenue works.
@@ -517,6 +587,16 @@ async function getPageDeepDiveUncached(
     sessionSeries.length > 0 ? bucketFromTimeSeries(sessionSeries, period, 'sessions') : fallbackSessions;
   const convRateBucket =
     sessionSeries.length > 0 ? bucketFromTimeSeries(sessionSeries, period, 'convRate') : fallbackConv;
+
+  // Per-channel card data for the "filter by channel" dropdown above the
+  // cards. Current/prior are exact per channel (sessions/conv/orders) or
+  // allocated (revenue); the sparkline reuses the page's trend shape scaled
+  // to the channel's share of sessions (Shopify has no per-channel daily
+  // series per page). Year-ago isn't available per channel.
+  const channelCards = buildChannelCards(
+    sourceBreakdownWithRev,
+    { sessions: sessionsBucket, convRate: convRateBucket, orders: buckets.orders, revenue: buckets.revenue },
+  );
 
   // Intelligems tests located to this page. The redirect (origin/dest)
   // match drives the header pill; the full list (incl. on-site edits
@@ -615,7 +695,7 @@ async function getPageDeepDiveUncached(
       yesterday: { orders: orders.ydayCount, revenue: orders.ydayRev },
       dayBefore: { orders: orders.dbeforeCount, revenue: orders.dbeforeRev },
     },
-    sourceBreakdown,
+    sourceBreakdown: sourceBreakdownWithRev,
     clarity: clarityMap.get(path) ?? null,
     activePromos,
     intelligemsTest,
@@ -624,5 +704,6 @@ async function getPageDeepDiveUncached(
     endedTests,
     dismissedTests,
     variants,
+    channelCards,
   };
 }

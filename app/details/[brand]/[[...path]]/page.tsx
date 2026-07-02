@@ -15,6 +15,7 @@ import { HistoryPicker } from '@/app/_components/history-picker';
 import { RefreshIntelligems } from '@/app/_components/refresh-intelligems';
 import { AttachTestPicker, DetachButton } from '@/app/_components/attach-test';
 import { DismissTestButton, RestoreTestButton } from '@/app/_components/dismiss-test';
+import { ChannelCards } from '@/app/_components/channel-cards';
 import type { ExperienceResults } from '@/lib/intelligems-api';
 import { Sparkline, type SparklineBand } from '@/app/_components/sparkline';
 import { fmt, type Format } from '@/lib/format';
@@ -651,55 +652,23 @@ export default async function PageDeepDivePage({
           )}
         </section>
 
-        {/* Core metric cards — all full Layer-1-style rich cards. */}
-        <section className="mb-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-          <RichMetricCard
-            title={`Sessions · ${period}d`}
-            bucket={data.sessionsBucket}
-            kind="count"
-            sparklineColor="text-sky-600 dark:text-sky-400"
-            bands={promoBands}
-          />
-          <RichMetricCard
-            title={`Conv rate · ${period}d`}
-            bucket={data.convRateBucket}
-            kind="percent"
-            sparklineColor="text-sky-600 dark:text-sky-400"
-            bands={promoBands}
-          />
-        </section>
-        <section className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-2">
-          <RichMetricCard
-            title={`Orders · ${period}d`}
-            bucket={data.orderBucket}
-            kind="count"
-            sparklineColor="text-emerald-600 dark:text-emerald-400"
-            bands={promoBands}
-          />
-          <RichMetricCard
-            title={`Revenue · ${period}d`}
-            bucket={data.revenueBucket}
-            kind="currency"
-            sparklineColor="text-emerald-600 dark:text-emerald-400"
-            bands={promoBands}
-          />
-          <RichMetricCard
-            title={`AOV · ${period}d`}
-            bucket={deriveAovBucket(data.orderBucket, data.revenueBucket)}
-            kind="aov"
-            sparklineColor="text-blue-600 dark:text-blue-400"
-            bands={promoBands}
-          />
-          {/* Subscription revenue landed on this page (web subscription
-              orders). Always shown ($0 where none), like AOV. */}
-          <RichMetricCard
-            title={`Subscription rev (landed here) · ${period}d`}
-            bucket={data.subRevenueBucket}
-            kind="currency"
-            sparklineColor="text-purple-600 dark:text-purple-400"
-            bands={promoBands}
-          />
-        </section>
+        {/* Core metric cards — full Layer-1-style rich cards, with a
+            channel filter above them. "All channels" = page totals; picking
+            a channel re-scopes the cards (see ChannelCards for the exact vs
+            allocated breakdown). */}
+        <ChannelCards
+          all={{
+            sessions: data.sessionsBucket,
+            convRate: data.convRateBucket,
+            orders: data.orderBucket,
+            revenue: data.revenueBucket,
+            aov: deriveAovBucket(data.orderBucket, data.revenueBucket),
+            subRevenue: data.subRevenueBucket,
+          }}
+          channels={data.channelCards}
+          period={period}
+          bands={promoBands}
+        />
 
         {/* Per-variant sales composition (PDPs with a variant split). */}
         {data.variants.length > 1 && (
@@ -841,35 +810,38 @@ export default async function PageDeepDivePage({
           </div>
         </section>
 
-        {/* Source breakdown for this page.
-            ShopifyQL doesn't expose device info on its sessions table
-            (confirmed via probe), so this is source-only. The "where
-            conversion concentrates" framing still works at the source
-            level — Meta vs Google vs Direct etc. */}
+        {/* Per-channel breakdown for this page. Channels come from Shopify's
+            session referrer (referring_channel), so paid/organic social split
+            into Facebook / Instagram / TikTok. Sessions, conv, and orders are
+            exact; revenue is the page's real revenue allocated across channels
+            by converting-session share (Shopify has no per-page revenue-by-
+            channel), so the Revenue column sums to the page's revenue. */}
         <section className="mb-6 overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
           <div className="border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
             <div className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              Source breakdown
+              Channel breakdown
             </div>
             <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
-              Where conversion concentrates on this page · {period}-day window
+              How each traffic source performs on this page · sessions/conv/orders exact · revenue allocated by converting-session share · {period}-day window
             </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wider text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
                 <tr>
-                  <th className="px-5 py-2 font-medium">Source</th>
+                  <th className="px-5 py-2 font-medium">Channel</th>
                   <th className="px-5 py-2 text-right font-medium">Sessions</th>
                   <th className="px-5 py-2 text-right font-medium">Conv rate</th>
+                  <th className="px-5 py-2 text-right font-medium">Orders</th>
+                  <th className="px-5 py-2 text-right font-medium" title="Page revenue allocated by each channel's converting-session share">Revenue</th>
                   <th className="px-5 py-2 text-right font-medium">vs prior</th>
                 </tr>
               </thead>
               <tbody>
                 {data.sourceBreakdown.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="px-5 py-6 text-center text-sm text-zinc-500 dark:text-zinc-400">
-                      No source breakdown available for this page in the {period}-day window.
+                    <td colSpan={6} className="px-5 py-6 text-center text-sm text-zinc-500 dark:text-zinc-400">
+                      No channel breakdown available for this page in the {period}-day window.
                     </td>
                   </tr>
                 ) : (
@@ -885,6 +857,12 @@ export default async function PageDeepDivePage({
                         </td>
                         <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
                           {fmtPct(r.convRate)}
+                        </td>
+                        <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
+                          {fmtCount(r.orders)}
+                        </td>
+                        <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
+                          {fmtMoney(r.revenue)}
                         </td>
                         <td className="px-5 py-3 text-right tabular-nums">
                           {change ? (
