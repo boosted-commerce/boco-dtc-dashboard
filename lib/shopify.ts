@@ -627,6 +627,67 @@ export function channelForReferrer(raw: string | null | undefined): string {
   return 'Other';
 }
 
+// The normalized channel set offered by the Layer 2 / Layer 3 channel
+// filters (matches channelForReferrer outputs). Static so the dropdown is
+// stable; a page/channel with no traffic just reads zero.
+export const CHANNELS = [
+  'Direct',
+  'Google',
+  'Facebook',
+  'Instagram',
+  'TikTok',
+  'Email',
+  'AI',
+  'Search (other)',
+  'Pinterest',
+  'Reddit',
+  'YouTube',
+  'Other',
+] as const;
+
+// Per-path, per-channel sessions for the whole store (one ShopifyQL call).
+// Returns path → { total sessions, byChannel: channel → {sessions, convRate} }
+// so the Layer 2 channel filter can re-scope each page row and compute the
+// channel's share of that page's traffic (for allocating orders/revenue).
+export async function getChannelSessionsByPath(
+  brand: Brand,
+  period: Period,
+): Promise<Map<string, { total: number; byChannel: Map<string, PageSessions> }>> {
+  const td = await runShopifyQL(
+    brand,
+    `FROM sessions SHOW sessions, conversion_rate GROUP BY referring_channel, landing_page_path SINCE -${period}d UNTIL today ORDER BY sessions DESC LIMIT 5000`,
+  );
+  const out = new Map<string, { total: number; byChannel: Map<string, PageSessions> }>();
+  if (!td) return out;
+  const raw = new Map<string, Map<string, { sessions: number; orders: number }>>();
+  for (const r of td.rows) {
+    const path = normalizeShopifyUrl(String(r.landing_page_path ?? ''));
+    const channel = channelForReferrer(r.referring_channel as string | null);
+    const sessions = Number(r.sessions) || 0;
+    const conv = Number(r.conversion_rate) || 0;
+    if (sessions <= 0) continue;
+    let byCh = raw.get(path);
+    if (!byCh) {
+      byCh = new Map();
+      raw.set(path, byCh);
+    }
+    const e = byCh.get(channel) ?? { sessions: 0, orders: 0 };
+    e.sessions += sessions;
+    e.orders += sessions * conv;
+    byCh.set(channel, e);
+  }
+  for (const [path, byCh] of raw) {
+    let total = 0;
+    const byChannel = new Map<string, PageSessions>();
+    for (const [ch, e] of byCh) {
+      total += e.sessions;
+      byChannel.set(ch, { sessions: e.sessions, convRate: e.sessions > 0 ? (e.orders / e.sessions) * 100 : 0 });
+    }
+    out.set(path, { total, byChannel });
+  }
+  return out;
+}
+
 export async function getSourceByPath(
   brand: Brand,
   path: string,

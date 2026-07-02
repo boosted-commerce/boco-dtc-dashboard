@@ -24,7 +24,7 @@ import {
   type Layer2Tab,
 } from '@/lib/queries/layer2';
 import { getWatchedPaths, getHiddenEntries } from '@/lib/watched-store';
-import { getPageTitles } from '@/lib/shopify';
+import { getPageTitles, CHANNELS } from '@/lib/shopify';
 import { getActivePromos, getPromosInWindow, type Promo } from '@/lib/queries/promos';
 import { getNorthbeamSummary, type NorthbeamSummary } from '@/lib/queries/northbeam';
 import { getNarrative } from '@/lib/queries/narrative';
@@ -36,6 +36,7 @@ import type { IntelligemsTest } from '@/lib/intelligems-tests';
 import { StarButton } from '@/app/_components/star-button';
 import { ReorderControls } from '@/app/_components/reorder-controls';
 import { TopProductRow } from '@/app/_components/top-product-row';
+import { ChannelSelect } from '@/app/_components/channel-select';
 import { AddWatchedInput } from '@/app/_components/add-watched-input';
 import { HideButton } from '@/app/_components/hide-button';
 import { HiddenManager } from '@/app/_components/hidden-manager';
@@ -1220,6 +1221,7 @@ export default async function Home({
     expanded?: string;
     sort?: string;
     dir?: string;
+    channel?: string;
   }>;
 }) {
   const sp = await searchParams;
@@ -1227,6 +1229,7 @@ export default async function Home({
   const brand = parseBrand(sp.brand);
   const tab = parseLayer2Tab(sp.tab);
   const source = parseSource(sp.source);
+  const channel = typeof sp.channel === 'string' ? sp.channel : undefined;
   const expanded = sp.expanded === 'true';
   const SORT_KEYS = ['sessions', 'checkout', 'orderRate', 'count', 'sub', 'revenue', 'vsPrior'] as const;
   const sortKey = (SORT_KEYS as readonly string[]).includes(sp.sort ?? '')
@@ -1246,7 +1249,7 @@ export default async function Home({
     igTests,
   ] = await Promise.all([
     getStoreOverview(brand, period, source),
-    getLayer2(brand, period, tab),
+    getLayer2(brand, period, tab, channel),
     getWatchedPaths(brand),
     getHiddenEntries(brand),
     getNorthbeamSummary(brand, period).catch(() => null),
@@ -1354,6 +1357,7 @@ export default async function Home({
   const hrefForSort = (col: Layer2SortKey): string => {
     const nextDir = col === sortKey && sortDir === 'desc' ? 'asc' : 'desc';
     const params = new URLSearchParams({ brand, period: String(period), tab, source, sort: col, dir: nextDir });
+    if (channel) params.set('channel', channel);
     if (expanded) params.set('expanded', 'true');
     return `/?${params.toString()}`;
   };
@@ -1581,6 +1585,9 @@ export default async function Home({
                     'bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-950/60',
                 }}
               />
+              {(starrableTabs.has(tab) || tab === 'lps' || tab === 'abtests') && (
+                <ChannelSelect channels={CHANNELS} />
+              )}
             </div>
             {/* Subtitle on its own row below — text length differences between tabs can't push the tab strip around */}
             <div className="mt-2 text-[11px] text-zinc-500 dark:text-zinc-400">
@@ -1659,7 +1666,7 @@ export default async function Home({
           {layer2Rows.length > COLLAPSED_ROWS && (
             <div className="flex justify-center border-t border-zinc-100 bg-zinc-50/50 px-5 py-3 dark:border-zinc-800 dark:bg-zinc-900/30">
               <Link
-                href={`/?brand=${brand}&period=${period}&tab=${tab}&source=${source}${sortKey ? `&sort=${sortKey}&dir=${sortDir}` : ''}${expanded ? '' : '&expanded=true'}`}
+                href={`/?brand=${brand}&period=${period}&tab=${tab}&source=${source}${channel ? `&channel=${encodeURIComponent(channel)}` : ''}${sortKey ? `&sort=${sortKey}&dir=${sortDir}` : ''}${expanded ? '' : '&expanded=true'}`}
                 scroll={false}
                 className="text-xs font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
               >
