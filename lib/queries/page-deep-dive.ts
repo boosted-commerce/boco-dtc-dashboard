@@ -174,14 +174,20 @@ function buildChannelCards(
     const revenue = bucket(r.revenue, priorRevenue, scale(page.revenue.daily, shareCur));
     // Conversion is a rate — not scalable; reuse the page conv trend as shape.
     const convRate = bucket(r.convRate, r.priorConvRate, page.convRate.daily);
-    const aov = bucket(
-      r.orders > 0 ? r.revenue / r.orders : 0,
-      priorOrders > 0 ? priorRevenue / priorOrders : 0,
-      revenue.daily.map((p, i) => {
+    // AOV is a rate, not a sum — divide revenue by orders at each aggregate
+    // level (so the "7-day" tile is 7-day revenue ÷ 7-day orders, an AOV,
+    // not the sum of daily AOVs). Mirrors deriveAovBucket.
+    const aov: Bucket = {
+      current: orders.current > 0 ? revenue.current / orders.current : 0,
+      prior: orders.prior > 0 ? revenue.prior / orders.prior : 0,
+      yesterday: orders.yesterday > 0 ? revenue.yesterday / orders.yesterday : 0,
+      sevenDayTotal: orders.sevenDayTotal > 0 ? revenue.sevenDayTotal / orders.sevenDayTotal : 0,
+      yearAgo: 0,
+      daily: revenue.daily.map((p, i) => {
         const o = orders.daily[i]?.value ?? 0;
         return { date: p.date, value: o > 0 ? p.value / o : 0 };
       }),
-    );
+    };
     return { channel: r.source, sessions, convRate, orders, revenue, aov };
   });
 }
@@ -501,7 +507,7 @@ export async function getPageDeepDive(
   // Bump the version when the PageDeepDive shape changes so stale cached
   // objects (missing newer fields like activeTests) can't be served.
   return withCache(
-    `deepdive:${brand}:${period}:${encodeURIComponent(path)}:v13`,
+    `deepdive:${brand}:${period}:${encodeURIComponent(path)}:v14`,
     120,
     () => getPageDeepDiveUncached(brand, path, period),
   );
