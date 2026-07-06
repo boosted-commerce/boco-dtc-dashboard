@@ -2,7 +2,7 @@ import { execute } from '@/lib/snowflake';
 import { withCache } from '@/lib/cache';
 import type { Brand, DailyPoint, Period } from '@/lib/queries/orders';
 import { getWatchedPaths, getHiddenPaths, getPinnedPaths, getLPPaths } from '@/lib/watched-store';
-import { getChannelSessions, getSessionsByPath, getProductVariantTitles, type ProductVariantTitles } from '@/lib/shopify';
+import { getChannelSessions, getSessionsByPath, getProductVariantTitles, getChannelSessionsByPath, CHANNELS, type ProductVariantTitles } from '@/lib/shopify';
 import { getActiveTests } from '@/lib/intelligems-api';
 import { getAllAttachedPaths } from '@/lib/intelligems-attach';
 
@@ -732,9 +732,11 @@ export async function getLayer2(
   brand: Brand,
   period: Period,
   tab: Layer2Tab,
+  channel?: string,
 ): Promise<Layer2Row[]> {
-  return withCache(`layer2:${brand}:${period}:${tab}:v1`, 120, () =>
-    getLayer2Uncached(brand, period, tab),
+  const ch = channel && (CHANNELS as readonly string[]).includes(channel) ? channel : null;
+  return withCache(`layer2:${brand}:${period}:${tab}:${ch ?? 'all'}:v1`, 120, () =>
+    getLayer2Uncached(brand, period, tab, ch),
   );
 }
 
@@ -742,11 +744,42 @@ async function getLayer2Uncached(
   brand: Brand,
   period: Period,
   tab: Layer2Tab,
+  channel: string | null,
 ): Promise<Layer2Row[]> {
-  const [rows, sessions] = await Promise.all([
-    getLayer2RowsInner(brand, period, tab),
-    PATH_KEYED_TABS.has(tab) ? getSessionsByPath(brand, period) : Promise.resolve(new Map()),
-  ]);
+  const rows = await getLayer2RowsInner(brand, period, tab);
+  if (!PATH_KEYED_TABS.has(tab)) return rows;
+
+  // Channel filter: re-scope each page row to one traffic channel. Sessions
+  // & conv are exact per channel; orders/revenue (and the sparkline) are the
+  // page's numbers allocated by that channel's share of the page's sessions.
+  if (channel) {
+    const chMap = await getChannelSessionsByPath(brand, period).catch(
+      () => new Map<string, { total: number; byChannel: Map<string, { sessions: number; convRate: number }> }>(),
+    );
+    return rows
+      .map((r) => {
+        const entry = chMap.get(r.key);
+        const ch = entry?.byChannel.get(channel);
+        if (!entry || !ch || entry.total <= 0) {
+          // No traffic from this channel to this page in the window.
+          return { ...r, sessions: 0, convRate: 0, currentCount: 0, subCount: 0, currentRevenue: 0, priorRevenue: 0, daily: [] };
+        }
+        const share = ch.sessions / entry.total;
+        return {
+          ...r,
+          sessions: ch.sessions,
+          convRate: ch.convRate,
+          currentCount: Math.round(ch.sessions * (ch.convRate / 100)),
+          subCount: undefined,
+          currentRevenue: r.currentRevenue * share,
+          priorRevenue: r.priorRevenue * share,
+          daily: r.daily.map((p) => ({ date: p.date, value: p.value * share })),
+        };
+      })
+      .sort((a, b) => b.currentRevenue - a.currentRevenue);
+  }
+
+  const sessions = await getSessionsByPath(brand, period);
   if (sessions.size === 0) return rows;
   return rows.map((r) => {
     const s = sessions.get(r.key);

@@ -12,6 +12,8 @@ import { AddLPInput, RemoveLPButton } from '@/app/_components/lp-controls';
 import { TopProductRow } from '@/app/_components/top-product-row';
 import { ReorderControls } from '@/app/_components/reorder-controls';
 import { AttachTestToPage } from '@/app/_components/attach-test-to-page';
+import { ChannelSelect } from '@/app/_components/channel-select';
+import { CHANNELS } from '@/lib/shopify';
 import { getActiveTests } from '@/lib/intelligems-api';
 
 export const dynamic = 'force-dynamic';
@@ -359,13 +361,14 @@ function Layer2Table({
 export default async function Level2Page({
   searchParams,
 }: {
-  searchParams: Promise<{ period?: string; brand?: string; tab?: string }>;
+  searchParams: Promise<{ period?: string; brand?: string; tab?: string; channel?: string }>;
 }) {
   const sp = await searchParams;
   const period = parsePeriod(sp.period);
   const brand = parseBrand(sp.brand);
   const tab = parseLayer2Tab(sp.tab);
-  const rows = await getLayer2(brand, period, tab);
+  const channel = typeof sp.channel === 'string' ? sp.channel : undefined;
+  const rows = await getLayer2(brand, period, tab, channel);
   // For the A/B tab's attach control: the brand's full active-test roster.
   const abTestOptions =
     tab === 'abtests'
@@ -450,13 +453,16 @@ export default async function Level2Page({
                 )}
               </div>
             </div>
-            <PillTabs<Layer2Tab>
-              items={LAYER2_TABS}
-              active={tab}
-              hrefFor={(t) => `/level-2?brand=${brand}&period=${period}&tab=${t}`}
-              ariaLabel="Select layer 2 tab"
-              labelFor={(t) => LAYER2_LABELS[t]}
-            />
+            <div className="flex flex-wrap items-center gap-3">
+              {pathKeyedTabs.has(tab) && <ChannelSelect channels={CHANNELS} />}
+              <PillTabs<Layer2Tab>
+                items={LAYER2_TABS}
+                active={tab}
+                hrefFor={(t) => `/level-2?brand=${brand}&period=${period}&tab=${t}`}
+                ariaLabel="Select layer 2 tab"
+                labelFor={(t) => LAYER2_LABELS[t]}
+              />
+            </div>
           </div>
           {tab === 'lps' && (
             <div className="border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
