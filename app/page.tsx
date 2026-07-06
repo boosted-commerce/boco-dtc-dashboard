@@ -1585,22 +1585,25 @@ export default async function Home({
                     'bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-950/60',
                 }}
               />
+            </div>
+            {/* Subtitle + channel filter on one row below — text length
+                differences between tabs can't push the tab strip around */}
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+              <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                {tab === 'attribution' ? (
+                  'Traffic sources · session-level data from ShopifyQL · top 10 by volume (expand for more)'
+                ) : (
+                  <>
+                    DTC orders only · top 10 by revenue (expand for more){' '}
+                    <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 font-semibold text-sky-700 dark:bg-sky-950/60 dark:text-sky-300">
+                      <span aria-hidden="true">👉</span>
+                      click any page → deep-dive view
+                    </span>
+                  </>
+                )}
+              </div>
               {(starrableTabs.has(tab) || tab === 'lps' || tab === 'abtests') && (
                 <ChannelSelect channels={CHANNELS} />
-              )}
-            </div>
-            {/* Subtitle on its own row below — text length differences between tabs can't push the tab strip around */}
-            <div className="mt-2 text-[11px] text-zinc-500 dark:text-zinc-400">
-              {tab === 'attribution' ? (
-                'Traffic sources · session-level data from ShopifyQL · top 10 by volume (expand for more)'
-              ) : (
-                <>
-                  DTC orders only · top 10 by revenue (expand for more){' '}
-                  <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 font-semibold text-sky-700 dark:bg-sky-950/60 dark:text-sky-300">
-                    <span aria-hidden="true">👉</span>
-                    click any page → deep-dive view
-                  </span>
-                </>
               )}
             </div>
           </div>
