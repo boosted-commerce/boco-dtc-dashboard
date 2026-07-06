@@ -222,8 +222,8 @@ function TestResults({ results }: { results: ExperienceResults }) {
             <th className="py-1 pr-3 font-medium">Variation</th>
             <th className="py-1 px-2 text-right font-medium">Visitors</th>
             <th className="py-1 px-2 text-right font-medium">Conv</th>
-            <th className="py-1 px-2 text-right font-medium" title="Net revenue per order (Intelligems)">AOV</th>
             <th className="py-1 px-2 text-right font-medium">RPV</th>
+            <th className="py-1 px-2 text-right font-medium" title="Net revenue per order (Intelligems)">AOV</th>
             {multi && <th className="py-1 pl-2 text-right font-medium">RPV vs control</th>}
           </tr>
         </thead>
@@ -242,8 +242,8 @@ function TestResults({ results }: { results: ExperienceResults }) {
                 </td>
                 <td className="py-1 px-2 text-right tabular-nums">{v.visitors.toLocaleString()}</td>
                 <td className="py-1 px-2 text-right tabular-nums">{pct(v.convRate)}</td>
-                <td className="py-1 px-2 text-right tabular-nums">{money(v.aov)}</td>
                 <td className="py-1 px-2 text-right tabular-nums">{money(v.rpv)}</td>
+                <td className="py-1 px-2 text-right tabular-nums">{money(v.aov)}</td>
                 {multi && (
                   <td
                     className={`py-1 pl-2 text-right tabular-nums ${
