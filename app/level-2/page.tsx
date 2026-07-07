@@ -9,6 +9,7 @@ import {
   type Layer2Tab,
 } from '@/lib/queries/layer2';
 import { AddLPInput, RemoveLPButton } from '@/app/_components/lp-controls';
+import { AddSocialInput, RemoveSocialButton } from '@/app/_components/social-controls';
 import { TopProductRow } from '@/app/_components/top-product-row';
 import { ReorderControls } from '@/app/_components/reorder-controls';
 import { AttachTestToPage } from '@/app/_components/attach-test-to-page';
@@ -182,6 +183,7 @@ function Layer2Table({
   showSessions,
   showRevenue,
   lpTab,
+  socialTab,
   reorderTab,
 }: {
   rows: Layer2Row[];
@@ -193,6 +195,7 @@ function Layer2Table({
   showSessions: boolean;
   showRevenue: boolean;
   lpTab?: boolean;
+  socialTab?: boolean;
   reorderTab?: boolean;
 }) {
   if (rows.length === 0) {
@@ -303,6 +306,11 @@ function Layer2Table({
                     <RemoveLPButton brand={brand} path={r.key} />
                   </div>
                 )}
+                {socialTab && (
+                  <div className="mt-1">
+                    <RemoveSocialButton brand={brand} path={r.key} />
+                  </div>
+                )}
               </td>
               {showSessions && (
                 <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
@@ -381,6 +389,7 @@ export default async function Level2Page({
   const metricNounByTab: Record<Layer2Tab, 'orders' | 'units' | 'orders attributed'> = {
     watched: 'orders',
     lps: 'orders',
+    social: 'orders',
     abtests: 'orders',
     pdps: 'orders',
     collections: 'orders',
@@ -391,6 +400,7 @@ export default async function Level2Page({
   const pathKeyedTabs: ReadonlySet<Layer2Tab> = new Set([
     'watched',
     'lps',
+    'social',
     'abtests',
     'pdps',
     'collections',
@@ -401,6 +411,7 @@ export default async function Level2Page({
   // Per-tab one-line description under the heading.
   const tabBlurb: Partial<Record<Layer2Tab, string>> = {
     lps: 'manually-curated landing pages',
+    social: 'manually-curated pages promoted on social',
     abtests: 'pages in an active Intelligems test (auto-detected)',
   };
 
@@ -469,6 +480,11 @@ export default async function Level2Page({
               <AddLPInput brand={brand} />
             </div>
           )}
+          {tab === 'social' && (
+            <div className="border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
+              <AddSocialInput brand={brand} />
+            </div>
+          )}
           {tab === 'abtests' && (
             <div className="border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
               <div className="mb-1.5 text-[11px] uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
@@ -483,9 +499,11 @@ export default async function Level2Page({
             emptyMessage={
               tab === 'lps'
                 ? `No landing pages added yet for ${brand}. Add one above.`
-                : tab === 'abtests'
-                  ? `No active Intelligems A/B tests located to pages for ${brand}.`
-                  : `No ${LAYER2_LABELS[tab].toLowerCase()} data in this period for ${brand}.`
+                : tab === 'social'
+                  ? `No social pages added yet for ${brand}. Add one above.`
+                  : tab === 'abtests'
+                    ? `No active Intelligems A/B tests located to pages for ${brand}.`
+                    : `No ${LAYER2_LABELS[tab].toLowerCase()} data in this period for ${brand}.`
             }
             period={period}
             brand={brand}
@@ -493,6 +511,7 @@ export default async function Level2Page({
             showSessions={showSessions}
             showRevenue={showRevenue}
             lpTab={tab === 'lps'}
+            socialTab={tab === 'social'}
             reorderTab={tab === 'watched'}
           />
         </section>
