@@ -69,6 +69,7 @@ async function getNorthbeamSummaryUncached(
           SUM(NEW_VISITS)     AS CUR_VISITS
         FROM BOCO_DASHBOARD.NORTHBEAM.DAILY_CHANNEL_METRICS
         WHERE BRAND = ?
+          AND PLATFORM NOT ILIKE '%amazon%'
           AND SNAPSHOT_DATE >= DATEADD(day, -?, CURRENT_DATE())
           AND SNAPSHOT_DATE < CURRENT_DATE()
         GROUP BY PLATFORM
@@ -80,6 +81,7 @@ async function getNorthbeamSummaryUncached(
           SUM(REV_ATTRIBUTED) AS PRIOR_REV
         FROM BOCO_DASHBOARD.NORTHBEAM.DAILY_CHANNEL_METRICS
         WHERE BRAND = ?
+          AND PLATFORM NOT ILIKE '%amazon%'
           AND SNAPSHOT_DATE >= DATEADD(day, -?, CURRENT_DATE())
           AND SNAPSHOT_DATE <  DATEADD(day, -?, CURRENT_DATE())
         GROUP BY PLATFORM

@@ -79,7 +79,9 @@ function buildPrompt(args: {
     .map((p) => `  - "${p.name}" starts ${p.startDate}`)
     .join('\n');
 
+  // DTC board — never feed Amazon into the summary's channel context.
   const topChannels = data.channelMix.channels
+    .filter((c) => !/amazon/i.test(c.channel))
     .slice(0, 3)
     .map((c) => `  - ${c.channel}: ${c.sharePct.toFixed(1)}% share, ${fmt.currency(c.currentRevenue)}`)
     .join('\n');
@@ -146,7 +148,7 @@ ${perPlatform || '  (no per-platform data)'}`
 
 BRAND CONTEXT: ${BRAND_CONTEXT[brand]}
 
-WINDOW: last ${period} days · channel filter: ${source === 'dtc' ? 'DTC orders only' : 'all channels'}
+WINDOW: last ${period} days · DTC (Shopify online-store / web) only
 
 CORE METRICS (current vs prior ${period}-day window):
   - Orders: ${fmt.count(data.orders.current)} (${fmt.pctChange(data.orders.current, data.orders.prior)})
@@ -174,7 +176,7 @@ ${recentLines ? `\nRecently ended:\n${recentLines}` : ''}
 ${upcomingLines ? `\nStarting soon:\n${upcomingLines}` : ''}
 
 INSTRUCTIONS:
-FOCUS: This is a DTC dashboard — center the narrative on DTC (Shopify online-store / web) performance: site revenue, conversion, AOV, subscriptions, paid efficiency to the site, and watched pages. Treat non-DTC channels (Amazon, TikTok Shop, Faire/wholesale, retail/POS, etc.) as secondary — mention one only if it's the dominant driver of a DTC-relevant shift, and keep it brief. Do NOT center the summary on Amazon or other marketplaces.
+FOCUS: This is a DTC-only dashboard. Analyze ONLY DTC (Shopify online-store / web) performance: site revenue, conversion, AOV, subscriptions, paid efficiency to the site, and watched pages. Do NOT mention or analyze Amazon, TikTok Shop, Faire/wholesale, retail/POS, or any other non-DTC channel at all — even in passing. If a data point references a non-DTC channel, ignore it entirely.
 
 Write 3-5 sentences (max 110 words total) covering:
 1. The most notable shift in core DTC metrics this window
