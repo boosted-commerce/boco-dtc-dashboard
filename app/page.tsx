@@ -4,9 +4,7 @@ import {
   getStoreOverview,
   parseBrand,
   parsePeriod,
-  parseSource,
   PERIODS,
-  SOURCES,
   type Brand,
   type Bucket,
   type ChannelMix as ChannelMixData,
@@ -1228,7 +1226,8 @@ export default async function Home({
   const period = parsePeriod(sp.period);
   const brand = parseBrand(sp.brand);
   const tab = parseLayer2Tab(sp.tab);
-  const source = parseSource(sp.source);
+  // DTC-only board — sales-channel toggle removed; always DTC.
+  const source: SourceFilter = 'dtc';
   const channel = typeof sp.channel === 'string' ? sp.channel : undefined;
   const expanded = sp.expanded === 'true';
   const SORT_KEYS = ['sessions', 'checkout', 'orderRate', 'count', 'sub', 'revenue', 'vsPrior'] as const;
@@ -1389,14 +1388,6 @@ export default async function Home({
             />
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <PillTabs<SourceFilter>
-              items={SOURCES}
-              active={source}
-              hrefFor={(s) => `/?brand=${brand}&period=${period}&tab=${tab}&source=${s}`}
-              ariaLabel="Filter sales channels"
-              labelFor={(s) => (s === 'all' ? 'All channels' : 'DTC only')}
-              preserveScroll
-            />
             <PillTabs<Period>
               items={PERIODS}
               active={period}
