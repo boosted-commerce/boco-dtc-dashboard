@@ -213,6 +213,9 @@ function TestResults({ results }: { results: ExperienceResults }) {
   const money = (n: number | null) => (n == null ? '—' : `$${n.toFixed(2)}`);
   const uplift = (v: number | null, base: number | null) =>
     v == null || base == null || base === 0 ? null : (v - base) / base;
+  // Flag variations with too few orders to read AOV/RPV meaningfully.
+  const LOW_SAMPLE = 10;
+  const anyLowSample = vars.some((v) => v.orders < LOW_SAMPLE);
 
   return (
     <div className="mt-2 overflow-x-auto">
@@ -223,6 +226,12 @@ function TestResults({ results }: { results: ExperienceResults }) {
             <th className="py-1 px-2 text-right font-medium">Visitors</th>
             <th className="py-1 px-2 text-right font-medium">Conv</th>
             <th className="py-1 px-2 text-right font-medium">RPV</th>
+            <th
+              className="py-1 px-2 text-right font-medium"
+              title="Average ORDER value — net revenue per order (Intelligems). Can exceed the unit price: orders may contain multiple items, and it's after discounts."
+            >
+              AOV
+            </th>
             {multi && <th className="py-1 pl-2 text-right font-medium">RPV vs control</th>}
           </tr>
         </thead>
@@ -238,10 +247,19 @@ function TestResults({ results }: { results: ExperienceResults }) {
                       {multi ? '(control)' : '(rolled out)'}
                     </span>
                   )}
+                  {v.orders < LOW_SAMPLE && (
+                    <span
+                      className="ml-1 inline-flex items-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-amber-700 dark:bg-amber-950/50 dark:text-amber-300"
+                      title={`Only ${v.orders} order${v.orders === 1 ? '' : 's'} — AOV/RPV aren't meaningful yet`}
+                    >
+                      low sample
+                    </span>
+                  )}
                 </td>
                 <td className="py-1 px-2 text-right tabular-nums">{v.visitors.toLocaleString()}</td>
                 <td className="py-1 px-2 text-right tabular-nums">{pct(v.convRate)}</td>
                 <td className="py-1 px-2 text-right tabular-nums">{money(v.rpv)}</td>
+                <td className="py-1 px-2 text-right tabular-nums">{money(v.aov)}</td>
                 {multi && (
                   <td
                     className={`py-1 pl-2 text-right tabular-nums ${
@@ -265,6 +283,16 @@ function TestResults({ results }: { results: ExperienceResults }) {
           100% rollout — no control group to compare against.
         </div>
       )}
+      {anyLowSample && (
+        <div className="mt-1 text-[11px] text-amber-700 dark:text-amber-400">
+          Variations marked <span className="font-semibold">low sample</span> have under {LOW_SAMPLE} orders — AOV &amp; RPV are noisy until more orders land.
+        </div>
+      )}
+      {/* Always-visible legend (native title tooltips are easy to miss). */}
+      <div className="mt-1 text-[10px] leading-relaxed text-zinc-400 dark:text-zinc-500">
+        <span className="font-medium">AOV</span> = avg order value (net revenue ÷ orders — multi-item &amp; after discounts, so it can exceed unit price) ·{' '}
+        <span className="font-medium">RPV</span> = net revenue per visitor
+      </div>
     </div>
   );
 }
