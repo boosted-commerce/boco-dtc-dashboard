@@ -1,7 +1,7 @@
 import { execute } from '@/lib/snowflake';
 import { withCache } from '@/lib/cache';
 import type { Brand, DailyPoint, Period } from '@/lib/queries/orders';
-import { getWatchedPaths, getHiddenPaths, getPinnedPaths, getLPPaths } from '@/lib/watched-store';
+import { getWatchedPaths, getHiddenPaths, getPinnedPaths, getLPPaths, getSocialPaths } from '@/lib/watched-store';
 import { getChannelSessions, getSessionsByPath, getProductVariantTitles, getChannelSessionsByPath, CHANNELS, type ProductVariantTitles } from '@/lib/shopify';
 import { getActiveTests } from '@/lib/intelligems-api';
 import { getAllAttachedPaths } from '@/lib/intelligems-attach';
@@ -306,6 +306,12 @@ export const getCMSPages = (brand: Brand, period: Period) =>
 // still renders before it has orders.
 export async function getLandingPages(brand: Brand, period: Period): Promise<Layer2Row[]> {
   return getRowsForPaths(brand, period, await getLPPaths(brand));
+}
+
+// Manually-curated Social list (pages promoted on social). Same $0-inclusive
+// metrics as Watched/Landing Pages.
+export async function getSocialPages(brand: Brand, period: Period): Promise<Layer2Row[]> {
+  return getRowsForPaths(brand, period, await getSocialPaths(brand));
 }
 
 // Pages involved in an Intelligems test — auto-located (redirect origins &
@@ -682,6 +688,7 @@ async function getChannelAttributionFromOrders(
 export type Layer2Tab =
   | 'watched'
   | 'lps'
+  | 'social'
   | 'abtests'
   | 'pdps'
   | 'collections'
@@ -691,6 +698,7 @@ export type Layer2Tab =
 export const LAYER2_TABS: readonly Layer2Tab[] = [
   'watched',
   'lps',
+  'social',
   'abtests',
   'pdps',
   'collections',
@@ -702,6 +710,7 @@ export const LAYER2_TABS: readonly Layer2Tab[] = [
 export const LAYER2_LABELS: Record<Layer2Tab, string> = {
   watched: 'Watched',
   lps: 'Landing Pages',
+  social: 'Social',
   abtests: 'A/B Tests',
   pdps: 'PDPs',
   collections: 'Collections',
@@ -722,6 +731,7 @@ export function parseLayer2Tab(raw: unknown): Layer2Tab {
 const PATH_KEYED_TABS: ReadonlySet<Layer2Tab> = new Set([
   'watched',
   'lps',
+  'social',
   'abtests',
   'pdps',
   'collections',
@@ -797,6 +807,8 @@ async function getLayer2RowsInner(
       return getWatchedPages(brand, period);
     case 'lps':
       return getLandingPages(brand, period);
+    case 'social':
+      return getSocialPages(brand, period);
     case 'abtests':
       return getABTestPages(brand, period);
     case 'pdps':

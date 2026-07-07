@@ -285,6 +285,43 @@ export async function removeLPPath(brand: Brand, path: string): Promise<void> {
   await redis.srem(lpKey(brand), path);
 }
 
+// --- Social (manual curated list) ---
+// Team-curated list of pages promoted on social (paste any URL), separate
+// from Landing Pages. Per-brand SET `social:{brand}`. Seeds empty.
+const socialKey = (brand: Brand) => `social:${brand}`;
+export const SOCIAL_MAX = 50;
+
+export async function getSocialPaths(brand: Brand): Promise<string[]> {
+  const redis = getRedis();
+  if (!redis) return [];
+  try {
+    return (await redis.smembers(socialKey(brand))).sort();
+  } catch (err) {
+    console.error('social-store read failed; treating as empty', err);
+    return [];
+  }
+}
+
+export async function addSocialPath(brand: Brand, path: string): Promise<void> {
+  const redis = getRedis();
+  if (!redis) throw new Error('Social store not configured (UPSTASH_REDIS_REST_URL missing)');
+  const alreadyMember = await redis.sismember(socialKey(brand), path);
+  if (alreadyMember === 1) return;
+  const currentCount = await redis.scard(socialKey(brand));
+  if (currentCount >= SOCIAL_MAX) {
+    throw new Error(
+      `Social list is at the ${SOCIAL_MAX}-page max for ${brand}. Remove one before adding another.`,
+    );
+  }
+  await redis.sadd(socialKey(brand), path);
+}
+
+export async function removeSocialPath(brand: Brand, path: string): Promise<void> {
+  const redis = getRedis();
+  if (!redis) throw new Error('Social store not configured (UPSTASH_REDIS_REST_URL missing)');
+  await redis.srem(socialKey(brand), path);
+}
+
 // Normalize a user-typed URL into a path the dashboard can match.
 //  - Strip protocol + host so 'https://site.com/pages/foo?utm=x' -> '/pages/foo'
 //  - Drop query string

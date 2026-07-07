@@ -42,6 +42,7 @@ import { HideButton } from '@/app/_components/hide-button';
 import { HiddenManager } from '@/app/_components/hidden-manager';
 import { AddPinnedInput, UnpinButton } from '@/app/_components/pin-controls';
 import { AddLPInput, RemoveLPButton } from '@/app/_components/lp-controls';
+import { AddSocialInput, RemoveSocialButton } from '@/app/_components/social-controls';
 import { isAuthConfigured } from '@/lib/auth';
 import { Sparkline, type SparklineMarker, type SparklineBand } from '@/app/_components/sparkline';
 import { fmt, type Format } from '@/lib/format';
@@ -846,6 +847,7 @@ function Layer2Table({
   titles,
   pathKeyed,
   lpTab,
+  socialTab,
   reorderTab,
 }: {
   rows: Layer2Row[];
@@ -859,6 +861,7 @@ function Layer2Table({
   hideable: boolean;
   pathKeyed: boolean;
   lpTab: boolean;
+  socialTab: boolean;
   reorderTab: boolean;
   showSessions: boolean;
   showRevenue: boolean;
@@ -1036,6 +1039,7 @@ function Layer2Table({
                     hideable && <HideButton brand={brand} path={r.key} />
                   )}
                   {lpTab && <RemoveLPButton brand={brand} path={r.key} />}
+                  {socialTab && <RemoveSocialButton brand={brand} path={r.key} />}
                   {reorderTab && (
                     <ReorderControls
                       brand={brand}
@@ -1305,6 +1309,7 @@ export default async function Home({
   const metricNounByTab: Record<Layer2Tab, 'orders' | 'units' | 'orders attributed'> = {
     watched: 'orders',
     lps: 'orders',
+    social: 'orders',
     abtests: 'orders',
     pdps: 'orders',
     collections: 'orders',
@@ -1316,6 +1321,7 @@ export default async function Home({
   const rowNounByTab: Record<Layer2Tab, string> = {
     watched: 'watched pages',
     lps: 'landing pages',
+    social: 'social pages',
     abtests: 'A/B test pages',
     pdps: 'product pages',
     collections: 'collections',
@@ -1602,7 +1608,7 @@ export default async function Home({
                   </>
                 )}
               </div>
-              {(starrableTabs.has(tab) || tab === 'lps' || tab === 'abtests') && (
+              {(starrableTabs.has(tab) || tab === 'lps' || tab === 'social' || tab === 'abtests') && (
                 <ChannelSelect channels={CHANNELS} />
               )}
             </div>
@@ -1631,6 +1637,14 @@ export default async function Home({
               <AddLPInput brand={brand} />
             </div>
           )}
+          {tab === 'social' && (
+            <div className="border-b border-zinc-200 bg-zinc-50/50 px-5 py-3 dark:border-zinc-800 dark:bg-zinc-900/30">
+              <div className="mb-1.5 text-[11px] uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                Add a social page — paste any URL or path (manually-curated list)
+              </div>
+              <AddSocialInput brand={brand} />
+            </div>
+          )}
           {tab === 'abtests' && (
             <div className="border-b border-zinc-200 bg-zinc-50/50 px-5 py-3 dark:border-zinc-800 dark:bg-zinc-900/30">
               <div className="mb-1.5 text-[11px] uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
@@ -1653,11 +1667,12 @@ export default async function Home({
               brand={brand}
               watchedSet={watchedSet}
               starrable={starrableTabs.has(tab)}
-              pathKeyed={starrableTabs.has(tab) || tab === 'lps' || tab === 'abtests'}
+              pathKeyed={starrableTabs.has(tab) || tab === 'lps' || tab === 'social' || tab === 'abtests'}
               lpTab={tab === 'lps'}
+              socialTab={tab === 'social'}
               reorderTab={tab === 'watched' && !sortKey}
               hideable={hideable}
-              showSessions={starrableTabs.has(tab) || tab === 'lps' || tab === 'abtests' || tab === 'attribution'}
+              showSessions={starrableTabs.has(tab) || tab === 'lps' || tab === 'social' || tab === 'abtests' || tab === 'attribution'}
               showRevenue={tab !== 'attribution'}
               igTests={igTests}
               bands={sparkBands}
