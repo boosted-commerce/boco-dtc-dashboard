@@ -288,6 +288,11 @@ function TestResults({ results }: { results: ExperienceResults }) {
           Variations marked <span className="font-semibold">low sample</span> have under {LOW_SAMPLE} orders — AOV &amp; RPV are noisy until more orders land.
         </div>
       )}
+      {/* Always-visible legend (native title tooltips are easy to miss). */}
+      <div className="mt-1 text-[10px] leading-relaxed text-zinc-400 dark:text-zinc-500">
+        <span className="font-medium">AOV</span> = avg order value (net revenue ÷ orders — multi-item &amp; after discounts, so it can exceed unit price) ·{' '}
+        <span className="font-medium">RPV</span> = net revenue per visitor
+      </div>
     </div>
   );
 }
