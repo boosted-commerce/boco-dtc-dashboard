@@ -172,8 +172,18 @@ function buildChannelCards(
     const sessions = bucket(r.sessions, r.priorSessions, scale(page.sessions.daily, shareCur));
     const orders = bucket(r.orders, priorOrders, scale(page.orders.daily, shareCur));
     const revenue = bucket(r.revenue, priorRevenue, scale(page.revenue.daily, shareCur));
-    // Conversion is a rate — not scalable; reuse the page conv trend as shape.
-    const convRate = bucket(r.convRate, r.priorConvRate, page.convRate.daily);
+    // Conversion is a rate, not a sum — the generic bucket() helper would
+    // SUM the daily conv %s for the 7-day tile (~7x inflated). Current/prior
+    // are the channel's real weighted rates; per-channel daily conv isn't
+    // available, so borrow the page's (weighted) yesterday/7-day/trend.
+    const convRate: Bucket = {
+      current: r.convRate,
+      prior: r.priorConvRate,
+      yesterday: page.convRate.yesterday,
+      sevenDayTotal: page.convRate.sevenDayTotal,
+      yearAgo: 0,
+      daily: page.convRate.daily,
+    };
     // AOV is a rate, not a sum — divide revenue by orders at each aggregate
     // level (so the "7-day" tile is 7-day revenue ÷ 7-day orders, an AOV,
     // not the sum of daily AOVs). Mirrors deriveAovBucket.
