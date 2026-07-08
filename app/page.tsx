@@ -934,6 +934,7 @@ function Layer2Table({
                   daily: r.daily,
                 }}
                 variants={r.variants}
+                showSub={showRevenue}
               />
             );
           }

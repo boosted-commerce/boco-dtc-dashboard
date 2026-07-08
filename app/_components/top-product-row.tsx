@@ -61,10 +61,15 @@ export function TopProductRow({
   label,
   product,
   variants,
+  showSub,
 }: {
   label: string;
   product: Metrics;
   variants: Variant[];
+  // The main dashboard's Top Products table has a Sub column between Units
+  // and Revenue; /level-2 doesn't. Render a matching (—) cell so the row
+  // aligns with its table's header.
+  showSub?: boolean;
 }) {
   const [sel, setSel] = useState('');
   const active = variants.find((v) => v.variantId === sel) ?? null;
@@ -107,6 +112,9 @@ export function TopProductRow({
       <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
         {Math.round(m.units).toLocaleString()}
       </td>
+      {showSub && (
+        <td className="px-5 py-3 text-right tabular-nums text-zinc-400 dark:text-zinc-500">—</td>
+      )}
       <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
         ${m.revenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
       </td>
