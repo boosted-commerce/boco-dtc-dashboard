@@ -172,8 +172,18 @@ function buildChannelCards(
     const sessions = bucket(r.sessions, r.priorSessions, scale(page.sessions.daily, shareCur));
     const orders = bucket(r.orders, priorOrders, scale(page.orders.daily, shareCur));
     const revenue = bucket(r.revenue, priorRevenue, scale(page.revenue.daily, shareCur));
-    // Conversion is a rate — not scalable; reuse the page conv trend as shape.
-    const convRate = bucket(r.convRate, r.priorConvRate, page.convRate.daily);
+    // Conversion is a rate, not a sum — the generic bucket() helper would
+    // SUM the daily conv %s for the 7-day tile (~7x inflated). Current/prior
+    // are the channel's real weighted rates; per-channel daily conv isn't
+    // available, so borrow the page's (weighted) yesterday/7-day/trend.
+    const convRate: Bucket = {
+      current: r.convRate,
+      prior: r.priorConvRate,
+      yesterday: page.convRate.yesterday,
+      sevenDayTotal: page.convRate.sevenDayTotal,
+      yearAgo: 0,
+      daily: page.convRate.daily,
+    };
     // AOV is a rate, not a sum — divide revenue by orders at each aggregate
     // level (so the "7-day" tile is 7-day revenue ÷ 7-day orders, an AOV,
     // not the sum of daily AOVs). Mirrors deriveAovBucket.
@@ -409,11 +419,20 @@ async function getPageSessionSeries(
     if (rows.length > 0) {
       // Stored CONVERSION_RATE is a decimal fraction (orders/sessions), so
       // ordersImplied = sessions × rate matches the ShopifyQL path's shape.
-      return rows.map((r) => {
+      const snow: SessionDailyPoint[] = rows.map((r) => {
         const sessions = n(r.SESSIONS);
         const rate = Number(r.CONVERSION_RATE) || 0;
         return { date: r.D, sessions, ordersImplied: sessions * rate };
       });
+      // DAILY_SESSIONS is synced once a day, so it lags ~a day (yesterday
+      // isn't in it yet in the morning → "yesterday" tiles read 0 and the
+      // sparkline drops to 0). Overlay live ShopifyQL for the recent days so
+      // the tail is fresh; Snowflake still provides the long history.
+      const ql = await getPageSessionTimeSeries(brand, path, days).catch(() => []);
+      if (ql.length === 0) return snow;
+      const byDate = new Map(snow.map((p) => [p.date, p]));
+      for (const p of ql) byDate.set(p.date, p); // ShopifyQL wins on overlap (fresher)
+      return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
     }
   } catch {
     // Table missing / query error → degrade to ShopifyQL below.
@@ -507,7 +526,7 @@ export async function getPageDeepDive(
   // Bump the version when the PageDeepDive shape changes so stale cached
   // objects (missing newer fields like activeTests) can't be served.
   return withCache(
-    `deepdive:${brand}:${period}:${encodeURIComponent(path)}:v14`,
+    `deepdive:${brand}:${period}:${encodeURIComponent(path)}:v15`,
     120,
     () => getPageDeepDiveUncached(brand, path, period),
   );

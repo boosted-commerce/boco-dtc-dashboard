@@ -551,10 +551,20 @@ export async function getSessionTimeSeries(
   brand: Brand,
   days: number,
 ): Promise<SessionDailyPoint[]> {
-  const tableData = await runShopifyQL(
-    brand,
-    `FROM sessions SHOW sessions, conversion_rate TIMESERIES day SINCE -${days}d UNTIL today ORDER BY day`,
-  );
+  const run = (d: number) =>
+    runShopifyQL(
+      brand,
+      `FROM sessions SHOW sessions, conversion_rate TIMESERIES day SINCE -${d}d UNTIL today ORDER BY day`,
+    );
+  let tableData = await run(days);
+  // The long (365 + period) lookback for the year-ago tile can exceed
+  // ShopifyQL's sessions retention, which parse-errors the WHOLE query and
+  // returns null — nuking even the current window. Retry with a shorter
+  // window so recent sessions/conversion still render (the year-ago tile
+  // just won't have data).
+  if ((!tableData || tableData.rows.length === 0) && days > 200) {
+    tableData = await run(200);
+  }
   if (!tableData) return [];
   return tableData.rows.map((r) => {
     const sessions = Number(r.sessions) || 0;

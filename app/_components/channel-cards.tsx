@@ -41,8 +41,11 @@ function Card({
   channelMode: boolean;
 }) {
   const change = pctChange(bucket.current, bucket.prior);
-  const sevenDayAvg = kind === 'aov' ? bucket.sevenDayTotal : bucket.sevenDayTotal / 7;
-  const sevenDayLabel = kind === 'aov' ? '7-DAY AOV' : '7-DAY AVG/DAY';
+  // AOV and conversion are rates — the 7-day bucket already holds the
+  // weighted rate, so show it directly (don't divide by 7 like a count).
+  const isRate = kind === 'aov' || kind === 'percent';
+  const sevenDayAvg = isRate ? bucket.sevenDayTotal : bucket.sevenDayTotal / 7;
+  const sevenDayLabel = kind === 'aov' ? '7-DAY AOV' : kind === 'percent' ? '7-DAY AVG' : '7-DAY AVG/DAY';
   return (
     <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
       <div className="text-[11px] uppercase tracking-wider text-zinc-500 dark:text-zinc-400">{title}</div>
