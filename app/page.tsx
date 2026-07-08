@@ -1531,13 +1531,14 @@ export default async function Home({
             bands={sparkBands}
             today={data.today?.aov}
           />
-          <SubMetricCard
+          <MetricCard
             title="Subscription Share"
             bucket={data.subscriptionShare}
             kind="percent"
             sparklineColor="text-purple-600 dark:text-purple-400"
             markers={sparkMarkers}
             bands={sparkBands}
+            today={data.today?.subscriptionShare}
           />
         </section>
 
@@ -1559,13 +1560,14 @@ export default async function Home({
             markers={sparkMarkers}
             bands={sparkBands}
           />
-          <SubMetricCard
+          <MetricCard
             title="New Subscriptions"
             bucket={data.newSubscriptions}
             kind="count"
             sparklineColor="text-purple-600 dark:text-purple-400"
             markers={sparkMarkers}
             bands={sparkBands}
+            today={data.today?.newSubscriptions}
           />
         </section>
 
