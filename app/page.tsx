@@ -168,6 +168,23 @@ function ChangeChip({
   );
 }
 
+// Placeholder for a funnel card when its data isn't available (e.g. Shopify
+// sessions lagging) — keeps the 3-up row intact instead of orphaning Orders.
+function EmptyMetricCard({ title, note }: { title: string; note: string }) {
+  return (
+    <div className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
+      <div className="flex items-baseline justify-between">
+        <div className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{title}</div>
+        <div className="text-[10px] uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+          Period total
+        </div>
+      </div>
+      <div className="mt-2 text-3xl font-semibold tabular-nums text-zinc-300 dark:text-zinc-700">—</div>
+      <div className="mt-2 text-xs text-zinc-400 dark:text-zinc-500">{note}</div>
+    </div>
+  );
+}
+
 function MetricCard({
   title,
   bucket,
@@ -186,8 +203,11 @@ function MetricCard({
   // Live "today so far" value for this metric (null/undefined = hide).
   today?: number | null;
 }) {
-  const sevenDayAvg = kind === 'aov' ? bucket.sevenDayTotal : bucket.sevenDayTotal / 7;
-  const sevenDayLabel = kind === 'aov' ? '7-DAY AOV' : '7-DAY AVG / DAY';
+  // AOV and conversion are rates — the bucket's sevenDayTotal is already the
+  // weighted rate, so show it directly (don't divide by 7 like a count).
+  const isRate = kind === 'aov' || kind === 'percent';
+  const sevenDayAvg = isRate ? bucket.sevenDayTotal : bucket.sevenDayTotal / 7;
+  const sevenDayLabel = kind === 'aov' ? '7-DAY AOV' : kind === 'percent' ? '7-DAY AVG' : '7-DAY AVG / DAY';
   // Per-day 7-day baseline for the "Today vs 7-day avg" comparison. For
   // rate metrics (conv %, AOV) the bucket's sevenDayTotal is already the
   // rate, so don't divide by 7.
@@ -1454,7 +1474,7 @@ export default async function Home({
 
         {/* Row 1: Funnel — Sessions, Conv Rate, Orders */}
         <section className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-3">
-          {data.sessions && (
+          {data.sessions ? (
             <MetricCard
               title="Sessions"
               bucket={data.sessions}
@@ -1464,8 +1484,10 @@ export default async function Home({
               bands={sparkBands}
               today={data.today?.sessions}
             />
+          ) : (
+            <EmptyMetricCard title="Sessions" note="No session data from Shopify right now (it can lag a few hours)." />
           )}
-          {data.convRate && (
+          {data.convRate ? (
             <MetricCard
               title="Conv Rate"
               bucket={data.convRate}
@@ -1475,6 +1497,8 @@ export default async function Home({
               bands={sparkBands}
               today={data.today?.convRate}
             />
+          ) : (
+            <EmptyMetricCard title="Conv Rate" note="No session data from Shopify right now (it can lag a few hours)." />
           )}
           <MetricCard
             title="Orders"
