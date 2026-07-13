@@ -170,13 +170,27 @@ function ChangeChip({
 
 // Placeholder for a funnel card when its data isn't available (e.g. Shopify
 // sessions lagging) — keeps the 3-up row intact instead of orphaning Orders.
-function EmptyMetricCard({ title, note }: { title: string; note: string }) {
+// Tiny muted data-source tag shown in each card's corner (e.g. "Snowflake",
+// "Shopify") so the team knows where the metric comes from.
+function SourceTag({ source }: { source?: string }) {
+  if (!source) return null;
+  return (
+    <div className="text-[9px] uppercase tracking-wider text-zinc-300 dark:text-zinc-600" title="Data source">
+      {source}
+    </div>
+  );
+}
+
+function EmptyMetricCard({ title, note, source }: { title: string; note: string; source?: string }) {
   return (
     <div className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
       <div className="flex items-baseline justify-between">
         <div className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{title}</div>
-        <div className="text-[10px] uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-          Period total
+        <div className="text-right">
+          <div className="text-[10px] uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+            Period total
+          </div>
+          <SourceTag source={source} />
         </div>
       </div>
       <div className="mt-2 text-3xl font-semibold tabular-nums text-zinc-300 dark:text-zinc-700">—</div>
@@ -193,6 +207,7 @@ function MetricCard({
   markers,
   bands,
   today,
+  source,
 }: {
   title: string;
   bucket: Bucket;
@@ -202,6 +217,8 @@ function MetricCard({
   bands?: SparklineBand[];
   // Live "today so far" value for this metric (null/undefined = hide).
   today?: number | null;
+  // Data-source tag shown in the corner (e.g. "Snowflake", "Shopify").
+  source?: string;
 }) {
   // AOV and conversion are rates — the bucket's sevenDayTotal is already the
   // weighted rate, so show it directly (don't divide by 7 like a count).
@@ -218,8 +235,11 @@ function MetricCard({
     <div className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
       <div className="flex items-baseline justify-between">
         <div className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{title}</div>
-        <div className="text-[10px] uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-          Period total
+        <div className="text-right">
+          <div className="text-[10px] uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+            Period total
+          </div>
+          <SourceTag source={source} />
         </div>
       </div>
       <div className="mt-2 text-3xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
@@ -1477,6 +1497,7 @@ export default async function Home({
           {data.sessions ? (
             <MetricCard
               title="Sessions"
+              source="Shopify"
               bucket={data.sessions}
               kind="count"
               sparklineColor="text-sky-600 dark:text-sky-400"
@@ -1485,11 +1506,12 @@ export default async function Home({
               today={data.today?.sessions}
             />
           ) : (
-            <EmptyMetricCard title="Sessions" note="No session data from Shopify right now (it can lag a few hours)." />
+            <EmptyMetricCard title="Sessions" note="No session data from Shopify right now (it can lag a few hours)." source="Shopify" />
           )}
           {data.convRate ? (
             <MetricCard
               title="Conv Rate"
+              source="Shopify"
               bucket={data.convRate}
               kind="percent"
               sparklineColor="text-sky-600 dark:text-sky-400"
@@ -1498,10 +1520,11 @@ export default async function Home({
               today={data.today?.convRate}
             />
           ) : (
-            <EmptyMetricCard title="Conv Rate" note="No session data from Shopify right now (it can lag a few hours)." />
+            <EmptyMetricCard title="Conv Rate" note="No session data from Shopify right now (it can lag a few hours)." source="Shopify" />
           )}
           <MetricCard
             title="Orders"
+            source="Snowflake"
             bucket={data.orders}
             kind="count"
             sparklineColor="text-emerald-600 dark:text-emerald-400"
@@ -1515,6 +1538,7 @@ export default async function Home({
         <section className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-3">
           <MetricCard
             title="Revenue"
+            source="Snowflake"
             bucket={data.revenue}
             kind="currency"
             sparklineColor="text-emerald-600 dark:text-emerald-400"
@@ -1524,6 +1548,7 @@ export default async function Home({
           />
           <MetricCard
             title="AOV"
+            source="Snowflake"
             bucket={data.aov}
             kind="aov"
             sparklineColor="text-blue-600 dark:text-blue-400"
@@ -1533,6 +1558,7 @@ export default async function Home({
           />
           <MetricCard
             title="Subscription Share"
+            source="Snowflake"
             bucket={data.subscriptionShare}
             kind="percent"
             sparklineColor="text-purple-600 dark:text-purple-400"
@@ -1546,6 +1572,7 @@ export default async function Home({
         <section className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
           <MetricCard
             title="Subscription Revenue"
+            source="Snowflake"
             bucket={data.subscriptionRevenue}
             kind="currency"
             sparklineColor="text-purple-600 dark:text-purple-400"
@@ -1554,6 +1581,7 @@ export default async function Home({
           />
           <MetricCard
             title="Recurring Revenue"
+            source="Snowflake"
             bucket={data.recurringRevenue}
             kind="currency"
             sparklineColor="text-purple-600 dark:text-purple-400"
@@ -1562,6 +1590,7 @@ export default async function Home({
           />
           <MetricCard
             title="New Subscriptions"
+            source="Snowflake"
             bucket={data.newSubscriptions}
             kind="count"
             sparklineColor="text-purple-600 dark:text-purple-400"
