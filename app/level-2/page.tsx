@@ -212,9 +212,9 @@ function Layer2Table({
           {showSessions && (
             <th
               className="px-5 py-2 text-right font-medium"
-              title="% of sessions that reached the checkout step (Shopify metric — not the same as completed orders)"
+              title="Sessions that COMPLETED checkout ÷ sessions — Shopify's conversion rate (actual purchases, session-attributed)"
             >
-              Checkout rate
+              Conv rate
             </th>
           )}
           {showSessions && (

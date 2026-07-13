@@ -906,12 +906,12 @@ function Layer2Table({
           )}
           {showSessions && (
             <SortTh
-              label="Checkout rate"
+              label="Conv rate"
               col="checkout"
               sortKey={sortKey}
               sortDir={sortDir}
               hrefForSort={hrefForSort}
-              title="% of sessions that reached the checkout step (Shopify metric — not the same as completed orders)"
+              title="Sessions that COMPLETED checkout ÷ sessions — Shopify's conversion rate (actual purchases, session-attributed)"
             />
           )}
           {showSessions && (
@@ -921,7 +921,7 @@ function Layer2Table({
               sortKey={sortKey}
               sortDir={sortDir}
               hrefForSort={hrefForSort}
-              title="Completed orders ÷ sessions (our calculation from Snowflake). Differs from Checkout rate when customers reach checkout but don't pay, or when orders attribute to a different first-touch page."
+              title="Completed orders ÷ sessions (our calculation from Snowflake). Differs from Conv rate — Shopify attributes conversions to the session, we attribute orders to the landing page."
             />
           )}
           <SortTh label={metricNoun} col="count" sortKey={sortKey} sortDir={sortDir} hrefForSort={hrefForSort} />
