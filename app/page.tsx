@@ -1744,16 +1744,19 @@ export default async function Home({
           {starrableTabs.has(tab) && layer2Rows.length > 0 && (
             <div className="border-t border-zinc-100 bg-zinc-50/50 px-5 py-3 text-[11px] text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/30 dark:text-zinc-400">
               <span className="font-medium">Reading this table:</span>{' '}
-              <span className="font-medium">Checkout rate</span> = % of sessions
-              that reached the checkout step (Shopify metric — counts visitors
-              who hit checkout, not just those who paid).{' '}
+              <span className="font-medium">Conv rate</span> = Shopify&rsquo;s
+              session conversion — sessions that landed here and{' '}
+              <em>completed</em> checkout &divide; sessions (Shopify metric,
+              same-session).{' '}
               <span className="font-medium">Order rate</span> = completed orders
-              &divide; sessions (our calculation). The two diverge when
-              customers reach checkout but don&rsquo;t pay, or when orders
-              attribute to a different first-touch page (e.g. a discovery row
-              with 0% checkout rate but orders &gt; 0 means visitors landed
-              here, left, and later converted elsewhere). Sub = subscription
-              orders that don&rsquo;t generate sessions.
+              attributed to this page &divide; sessions (our Snowflake calc).
+              They diverge because they attribute differently: Shopify counts
+              same-session conversions, while an order is credited to the
+              landing page recorded on it. So a common entry page like Home can
+              show a higher Order rate (many orders first-touch to it, incl.
+              buyers who returned later), while a deep page can show a higher
+              Conv rate. Sub = subscription orders that don&rsquo;t generate
+              sessions.
             </div>
           )}
         </section>
