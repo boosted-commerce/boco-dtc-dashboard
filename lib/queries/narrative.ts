@@ -191,7 +191,7 @@ Style: factual, concrete, no hype, no hedging, no bullet points, no markdown. Us
 // a note doesn't change the key (which would make a non-watched page's
 // summary "disappear"); instead the cache reads as stale and regenerates.
 function pageNarrativeKey(brand: Brand, period: Period, path: string): string {
-  return `narrative:page:${brand}:${period}:${encodeURIComponent(path)}:v3`;
+  return `narrative:page:${brand}:${period}:${encodeURIComponent(path)}:v4`;
 }
 
 // Note signature: count + newest timestamp. A change means the notes
@@ -305,8 +305,9 @@ export async function getPageNarrative(args: {
   // Most recent two complete days, so the summary can lead with daily
   // movement and consecutive snapshots read as a timeline.
   recentDays?: {
-    yesterday: { orders: number; revenue: number };
-    dayBefore: { orders: number; revenue: number };
+    yesterday: { orders: number; revenue: number; pending?: boolean };
+    dayBefore: { orders: number; revenue: number; pending?: boolean };
+    latestLoaded?: string | null;
   };
   sourceBreakdown: {
     source: string;
@@ -407,11 +408,24 @@ export async function getPageNarrative(args: {
     : '';
 
   // Most-recent-day movement, so consecutive daily summaries differ
-  // (the trailing window barely moves day-to-day on slow pages).
+  // (the trailing window barely moves day-to-day on slow pages). Orders come
+  // from a pipeline that lags ~1–2 days, so days flagged `pending` aren't
+  // loaded yet — we render them as "not yet loaded" rather than a bogus 0 so
+  // the model doesn't report a phantom zero-order collapse.
+  const recentDayLine = (label: string, d: { orders: number; revenue: number; pending?: boolean }) =>
+    d.pending
+      ? `  - ${label}: not yet loaded (order pipeline lags ~1–2 days — treat as pending, NOT a decline or zero)`
+      : `  - ${label}: ${d.orders} orders, $${d.revenue.toFixed(0)}`;
+  const anyPending =
+    args.recentDays?.yesterday.pending || args.recentDays?.dayBefore.pending;
   const recentDaysBlock = args.recentDays
     ? `\nMOST RECENT COMPLETE DAYS (use this to lead with what changed *recently*, since the trailing ${args.period}-day window barely moves day-to-day):
-  - Yesterday: ${args.recentDays.yesterday.orders} orders, $${args.recentDays.yesterday.revenue.toFixed(0)}
-  - Day before: ${args.recentDays.dayBefore.orders} orders, $${args.recentDays.dayBefore.revenue.toFixed(0)}\n`
+${recentDayLine('Yesterday', args.recentDays.yesterday)}
+${recentDayLine('Day before', args.recentDays.dayBefore)}${
+        anyPending
+          ? `\n  NOTE: Order/revenue data is only loaded through ${args.recentDays.latestLoaded ?? 'a recent date'}. Days after that are still syncing — do NOT describe them as a drop, a zero-order streak, or underperformance. Base recent-movement commentary only on loaded days.`
+          : ''
+      }\n`
     : '';
 
   // Team notes — most recent 10, oldest→newest. Fed in as authoritative
@@ -448,9 +462,11 @@ INSTRUCTIONS:
 Do NOT output a title, heading, or any markdown (no "#", "*", or bullet points) — start directly with the analysis as plain prose.
 
 Write 3-6 sentences (max 140 words total) that:
-1. Lead with the most recent day-over-day movement when it's notable (yesterday vs the day before), then place it in the context of the trailing window. If yesterday is materially unchanged from the day before, say so in one line rather than repeating prior detail — so each day's summary reads as a fresh timeline entry, not a duplicate
+1. Lead with the most recent day-over-day movement when it's notable (yesterday vs the day before), then place it in the context of the trailing window. If yesterday is materially unchanged from the day before, say so in one line rather than repeating prior detail — so each day's summary reads as a fresh timeline entry, not a duplicate. If a recent day is marked "not yet loaded"/pending above, lead instead with the most recent LOADED day and never treat the unloaded day as a decline
 2. Attribute it to a specific cause grounded in the data: a device/source segment ("conversion has fallen to 0.4% on mobile from Meta"), a Clarity signal ("12 rage-click sessions concentrated on this URL"), an active promo (if relevant), or the Intelligems test if this page is in one
 3. Call out one thing worth attention — a specific friction point, a segment opportunity, or a divergence
+
+CRITICAL — data freshness: order and revenue figures come from a pipeline that lags ~1–2 days. Never report the trailing 1–2 days as a zero-order streak, a revenue collapse, or a sudden drop when those days are flagged pending/not-yet-loaded above — that is a sync gap, not real performance. Session and conversion figures are live and can be discussed for recent days.
 
 CRITICAL — Intelligems redirects: if this page is a REDIRECT ORIGIN, do NOT describe its low sessions/orders/conversion as underperformance or a drop. Explain that the numbers are low because traffic is being redirected to the destination page (name it), and point the reader there for real performance. If it's a REDIRECT DESTINATION, note its numbers are boosted by redirected traffic. Always reconcile the metrics with any active test before drawing conclusions.
 

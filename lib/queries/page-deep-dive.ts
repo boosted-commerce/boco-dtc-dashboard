@@ -53,8 +53,12 @@ export type PageDeepDive = {
   // can lead with day-over-day movement and consecutive daily snapshots
   // read as a timeline rather than near-duplicate trailing-window text.
   recentDays: {
-    yesterday: { orders: number; revenue: number };
-    dayBefore: { orders: number; revenue: number };
+    // `pending` = the order pipeline hasn't loaded this day yet (lags ~1–2
+    // days), so a 0 here means "not loaded", not "no orders". `latestLoaded`
+    // is the brand's most recent loaded order date (YYYY-MM-DD).
+    yesterday: { orders: number; revenue: number; pending: boolean };
+    dayBefore: { orders: number; revenue: number; pending: boolean };
+    latestLoaded: string | null;
   };
   // Device × source breakdown for the current window
   sourceBreakdown: SourceBreakdownRow[];
@@ -128,6 +132,13 @@ type OrdersRow = {
   YDAY_REVENUE: string;
   DBEFORE_COUNT: string;
   DBEFORE_REVENUE: string;
+  // Pipeline-freshness flags. SHOPIFY_ORDERS_RD_ORDERS is loaded by a
+  // data-team job that lags ~1–2 days, so a recent day reading 0 orders may
+  // simply be unloaded rather than genuinely empty. These compare the brand's
+  // latest loaded order date against each recent day.
+  YDAY_PENDING: boolean | null;
+  DBEFORE_PENDING: boolean | null;
+  LATEST_LOADED: string | null;
 };
 
 const n = (v: unknown): number => Number(v ?? 0) || 0;
@@ -215,6 +226,9 @@ async function getOrdersForPath(
   ydayRev: number;
   dbeforeCount: number;
   dbeforeRev: number;
+  ydayPending: boolean;
+  dbeforePending: boolean;
+  latestLoaded: string | null;
 }> {
   // Yesterday = [-1 day, today); day-before = [-2 days, -1 day). Literal
   // offsets (no extra binds) — both fall inside the classified window.
@@ -238,7 +252,12 @@ async function getOrdersForPath(
         COALESCE(SUM(IFF(CREATED_AT >= DATEADD(day, -1, DATE_TRUNC('day', CURRENT_TIMESTAMP())), 1, 0)), 0) AS YDAY_COUNT,
         COALESCE(SUM(IFF(CREATED_AT >= DATEADD(day, -1, DATE_TRUNC('day', CURRENT_TIMESTAMP())), TOTAL_PRICE_AMOUNT, 0)), 0) AS YDAY_REVENUE,
         COALESCE(SUM(IFF(CREATED_AT >= DATEADD(day, -2, DATE_TRUNC('day', CURRENT_TIMESTAMP())) AND CREATED_AT < DATEADD(day, -1, DATE_TRUNC('day', CURRENT_TIMESTAMP())), 1, 0)), 0) AS DBEFORE_COUNT,
-        COALESCE(SUM(IFF(CREATED_AT >= DATEADD(day, -2, DATE_TRUNC('day', CURRENT_TIMESTAMP())) AND CREATED_AT < DATEADD(day, -1, DATE_TRUNC('day', CURRENT_TIMESTAMP())), TOTAL_PRICE_AMOUNT, 0)), 0) AS DBEFORE_REVENUE
+        COALESCE(SUM(IFF(CREATED_AT >= DATEADD(day, -2, DATE_TRUNC('day', CURRENT_TIMESTAMP())) AND CREATED_AT < DATEADD(day, -1, DATE_TRUNC('day', CURRENT_TIMESTAMP())), TOTAL_PRICE_AMOUNT, 0)), 0) AS DBEFORE_REVENUE,
+        -- Pipeline freshness: brand-level latest loaded order (not path-scoped,
+        -- so it reflects the data-team job, not this page's own gaps).
+        (SELECT MAX(CREATED_AT) FROM classified) < DATEADD(day, -1, DATE_TRUNC('day', CURRENT_TIMESTAMP())) AS YDAY_PENDING,
+        (SELECT MAX(CREATED_AT) FROM classified) < DATEADD(day, -2, DATE_TRUNC('day', CURRENT_TIMESTAMP())) AS DBEFORE_PENDING,
+        TO_VARCHAR((SELECT MAX(CREATED_AT) FROM classified), 'YYYY-MM-DD') AS LATEST_LOADED
       FROM classified
       WHERE REGEXP_REPLACE(LANDING_PATH, '(^https?://[^/]+)|/$', '') = ?
     `,
@@ -254,6 +273,9 @@ async function getOrdersForPath(
     ydayRev: n(r?.YDAY_REVENUE),
     dbeforeCount: n(r?.DBEFORE_COUNT),
     dbeforeRev: n(r?.DBEFORE_REVENUE),
+    ydayPending: r?.YDAY_PENDING === true,
+    dbeforePending: r?.DBEFORE_PENDING === true,
+    latestLoaded: r?.LATEST_LOADED ?? null,
   };
 }
 
@@ -526,7 +548,7 @@ export async function getPageDeepDive(
   // Bump the version when the PageDeepDive shape changes so stale cached
   // objects (missing newer fields like activeTests) can't be served.
   return withCache(
-    `deepdive:${brand}:${period}:${encodeURIComponent(path)}:v15`,
+    `deepdive:${brand}:${period}:${encodeURIComponent(path)}:v16`,
     120,
     () => getPageDeepDiveUncached(brand, path, period),
   );
@@ -570,6 +592,9 @@ async function getPageDeepDiveUncached(
       ydayRev: 0,
       dbeforeCount: 0,
       dbeforeRev: 0,
+      ydayPending: false,
+      dbeforePending: false,
+      latestLoaded: null,
     })),
     getActiveTests(brand).catch(() => [] as ActiveTest[]),
     getPageBuckets(brand, path, period).catch(() => ({
@@ -717,8 +742,17 @@ async function getPageDeepDiveUncached(
     sessionsBucket,
     convRateBucket,
     recentDays: {
-      yesterday: { orders: orders.ydayCount, revenue: orders.ydayRev },
-      dayBefore: { orders: orders.dbeforeCount, revenue: orders.dbeforeRev },
+      yesterday: {
+        orders: orders.ydayCount,
+        revenue: orders.ydayRev,
+        pending: orders.ydayPending,
+      },
+      dayBefore: {
+        orders: orders.dbeforeCount,
+        revenue: orders.dbeforeRev,
+        pending: orders.dbeforePending,
+      },
+      latestLoaded: orders.latestLoaded,
     },
     sourceBreakdown: sourceBreakdownWithRev,
     clarity: clarityMap.get(path) ?? null,
