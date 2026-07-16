@@ -85,8 +85,10 @@ export type StoreOverview = {
   recurringRevenue: Bucket;
   newSubscriptions: Bucket;
   // Subscriptions cancelled in the window (current + prior for vs-prior %).
-  // Null when the churn source is unavailable. From REPORT_RECHARGE_SUBSCRIPTIONS.
-  churnedSubscribers: { current: number; prior: number } | null;
+  // Counts subscriptions (distinct subscription ids), matching Recharge's
+  // "churned subscriptions" metric — not distinct customers. Null when the
+  // churn source is unavailable. From REPORT_RECHARGE_SUBSCRIPTIONS.
+  churnedSubscriptions: { current: number; prior: number } | null;
   topSubscriptionProducts: TopSubProduct[];
   // ShopifyQL-sourced. Null when the brand has no Shopify install yet
   // (graceful degrade — Layer 1 still renders the Snowflake-backed cards).
@@ -365,7 +367,7 @@ type ChurnRow = {
   CHURN_PRIOR: number | string | null;
 };
 
-async function getChurnedSubscribers(
+async function getChurnedSubscriptions(
   brand: Brand,
   period: Period,
 ): Promise<{ current: number; prior: number } | null> {
@@ -556,7 +558,7 @@ async function getStoreOverviewUncached(
     rechargeAgg,
     rechargeDaily,
     topProducts,
-    churnedSubscribers,
+    churnedSubscriptions,
     channelMix,
     sessionSeries,
     todayOrders,
@@ -567,7 +569,7 @@ async function getStoreOverviewUncached(
     getRechargeAggregates(brand, period),
     getRechargeDaily(brand, period),
     getTopSubscriptionProducts(brand, period),
-    getChurnedSubscribers(brand, period),
+    getChurnedSubscriptions(brand, period),
     getChannelMix(brand, period),
     // Pull ~year-back daily series so all comparison windows can be derived.
     getSessionTimeSeries(brand, 365 + period),
@@ -722,7 +724,7 @@ async function getStoreOverviewUncached(
     subscriptionRevenue,
     recurringRevenue,
     newSubscriptions,
-    churnedSubscribers,
+    churnedSubscriptions,
     topSubscriptionProducts: topProducts,
     sessions,
     convRate,

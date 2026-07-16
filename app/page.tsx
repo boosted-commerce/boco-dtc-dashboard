@@ -1163,9 +1163,11 @@ function Layer2Table({
   );
 }
 
-// Churned subscribers pill for the subscriptions header. Churn is a negative
-// metric, so the vs-prior arrow is inverted from revenue: fewer cancellations
-// than the prior period is an improvement (green ▼); more is worse (red ▲).
+// Churned-subscriptions pill for the subscriptions header. Counts cancelled
+// subscriptions (not distinct customers) to match Recharge's "churned
+// subscriptions" metric. Churn is a negative metric, so the vs-prior arrow is
+// inverted from revenue: fewer cancellations than prior is an improvement
+// (green ▼); more is worse (red ▲).
 function ChurnBadge({ current, prior }: { current: number; prior: number }) {
   let change: { text: string; color: string } | null = null;
   if (prior > 0) {
@@ -1184,10 +1186,10 @@ function ChurnBadge({ current, prior }: { current: number; prior: number }) {
   return (
     <span
       className="inline-flex items-center gap-1.5 rounded-full bg-rose-100 px-2 py-0.5 font-medium text-rose-800 dark:bg-rose-950/40 dark:text-rose-300"
-      title="Subscriptions cancelled in the selected period (Recharge), vs the prior period"
+      title="Subscriptions manually cancelled in the selected period (Recharge), vs the prior period. Counts subscriptions, not distinct customers."
     >
       <span className="h-1.5 w-1.5 rounded-full bg-rose-500" aria-hidden="true" />
-      {current.toLocaleString()} churned
+      {current.toLocaleString()} churned subscriptions
       {change && <span className={`font-semibold ${change.color}`}>{change.text}</span>}
     </span>
   );
@@ -1640,7 +1642,7 @@ export default async function Home({
           <TopProductsTable
             rows={data.topSubscriptionProducts}
             brandNewSubs={data.newSubscriptions.current}
-            churn={data.churnedSubscribers}
+            churn={data.churnedSubscriptions}
           />
         </section>
 
