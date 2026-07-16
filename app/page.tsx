@@ -1163,12 +1163,44 @@ function Layer2Table({
   );
 }
 
+// Churned subscribers pill for the subscriptions header. Churn is a negative
+// metric, so the vs-prior arrow is inverted from revenue: fewer cancellations
+// than the prior period is an improvement (green ▼); more is worse (red ▲).
+function ChurnBadge({ current, prior }: { current: number; prior: number }) {
+  let change: { text: string; color: string } | null = null;
+  if (prior > 0) {
+    const p = ((current - prior) / prior) * 100;
+    if (Math.abs(p) < 0.5) {
+      change = { text: '→ flat', color: 'text-zinc-500 dark:text-zinc-400' };
+    } else {
+      const up = p > 0; // churn rose = bad
+      const arrow = up ? '▲' : '▼';
+      const color = up
+        ? 'text-red-600 dark:text-red-400'
+        : 'text-emerald-600 dark:text-emerald-400';
+      change = { text: `${arrow} ${Math.round(Math.abs(p))}%`, color };
+    }
+  }
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 rounded-full bg-rose-100 px-2 py-0.5 font-medium text-rose-800 dark:bg-rose-950/40 dark:text-rose-300"
+      title="Subscriptions cancelled in the selected period (Recharge), vs the prior period"
+    >
+      <span className="h-1.5 w-1.5 rounded-full bg-rose-500" aria-hidden="true" />
+      {current.toLocaleString()} churned
+      {change && <span className={`font-semibold ${change.color}`}>{change.text}</span>}
+    </span>
+  );
+}
+
 function TopProductsTable({
   rows,
   brandNewSubs,
+  churn,
 }: {
   rows: TopSubProduct[];
   brandNewSubs: number;
+  churn: { current: number; prior: number } | null;
 }) {
   if (rows.length === 0) {
     return (
@@ -1212,6 +1244,7 @@ function TopProductsTable({
           <span className="inline-flex items-center gap-1.5 rounded-full bg-fuchsia-100 px-2 py-0.5 font-medium text-fuchsia-800 dark:bg-fuchsia-950/40 dark:text-fuchsia-300">
             ${totalRev.toLocaleString(undefined, { maximumFractionDigits: 0 })} first-order rev
           </span>
+          {churn && <ChurnBadge current={churn.current} prior={churn.prior} />}
         </div>
       </div>
       <table className="w-full text-sm">
@@ -1607,6 +1640,7 @@ export default async function Home({
           <TopProductsTable
             rows={data.topSubscriptionProducts}
             brandNewSubs={data.newSubscriptions.current}
+            churn={data.churnedSubscribers}
           />
         </section>
 

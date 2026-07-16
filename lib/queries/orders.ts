@@ -84,6 +84,9 @@ export type StoreOverview = {
   subscriptionRevenue: Bucket;
   recurringRevenue: Bucket;
   newSubscriptions: Bucket;
+  // Subscriptions cancelled in the window (current + prior for vs-prior %).
+  // Null when the churn source is unavailable. From REPORT_RECHARGE_SUBSCRIPTIONS.
+  churnedSubscribers: { current: number; prior: number } | null;
   topSubscriptionProducts: TopSubProduct[];
   // ShopifyQL-sourced. Null when the brand has no Shopify install yet
   // (graceful degrade — Layer 1 still renders the Snowflake-backed cards).
@@ -351,6 +354,48 @@ async function getTopSubscriptionProducts(
   }));
 }
 
+// Churned subscribers — subscriptions whose cancellation date falls in the
+// window. Sourced from BI.PUBLIC.REPORT_RECHARGE_SUBSCRIPTIONS (not
+// RECHARGE_ORDERS, which is orders-only and has no cancellation signal).
+// Columns there are case-sensitive quoted identifiers, hence "Brand"/"id"/
+// "cancelled_at". Counts distinct subscription ids so a multi-line sub isn't
+// double-counted.
+type ChurnRow = {
+  CHURN_CURRENT: number | string | null;
+  CHURN_PRIOR: number | string | null;
+};
+
+async function getChurnedSubscribers(
+  brand: Brand,
+  period: Period,
+): Promise<{ current: number; prior: number } | null> {
+  try {
+    const rows = await execute<ChurnRow>(
+      `
+        WITH bounds AS (
+          SELECT
+            DATE_TRUNC('day', CURRENT_TIMESTAMP()) AS today_start,
+            DATEADD(day, -?, DATE_TRUNC('day', CURRENT_TIMESTAMP())) AS current_start,
+            DATEADD(day, -?, DATE_TRUNC('day', CURRENT_TIMESTAMP())) AS prior_start
+        )
+        SELECT
+          COUNT(DISTINCT IFF(s."cancelled_at" >= b.current_start AND s."cancelled_at" < b.today_start, s."id", NULL)) AS CHURN_CURRENT,
+          COUNT(DISTINCT IFF(s."cancelled_at" >= b.prior_start AND s."cancelled_at" < b.current_start, s."id", NULL)) AS CHURN_PRIOR
+        FROM BI.PUBLIC.REPORT_RECHARGE_SUBSCRIPTIONS s, bounds b
+        WHERE s."Brand" = ?
+          AND s."cancelled_at" >= b.prior_start
+          AND s."cancelled_at" < b.today_start
+      `,
+      [period, period * 2, brand],
+    );
+    const r = rows[0] ?? ({} as ChurnRow);
+    return { current: n(r.CHURN_CURRENT), prior: n(r.CHURN_PRIOR) };
+  } catch {
+    // Degrade gracefully — the header badge simply won't render.
+    return null;
+  }
+}
+
 // Channel mix — all-channel revenue breakdown for scope framing.
 // Calendar-day boundaries match other metrics; period-aware.
 type ChannelRow = {
@@ -511,6 +556,7 @@ async function getStoreOverviewUncached(
     rechargeAgg,
     rechargeDaily,
     topProducts,
+    churnedSubscribers,
     channelMix,
     sessionSeries,
     todayOrders,
@@ -521,6 +567,7 @@ async function getStoreOverviewUncached(
     getRechargeAggregates(brand, period),
     getRechargeDaily(brand, period),
     getTopSubscriptionProducts(brand, period),
+    getChurnedSubscribers(brand, period),
     getChannelMix(brand, period),
     // Pull ~year-back daily series so all comparison windows can be derived.
     getSessionTimeSeries(brand, 365 + period),
@@ -675,6 +722,7 @@ async function getStoreOverviewUncached(
     subscriptionRevenue,
     recurringRevenue,
     newSubscriptions,
+    churnedSubscribers,
     topSubscriptionProducts: topProducts,
     sessions,
     convRate,
