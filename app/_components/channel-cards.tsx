@@ -33,6 +33,8 @@ function Card({
   bands,
   channelMode,
   source,
+  note,
+  hideSparkline,
 }: {
   title: string;
   bucket: Bucket;
@@ -41,6 +43,12 @@ function Card({
   bands?: SparklineBand[];
   channelMode: boolean;
   source?: string;
+  // Small caption under the value — used to flag allocated/estimated
+  // figures ("allocated by session share") so they don't read as measured.
+  note?: string;
+  // Suppress the sparkline (e.g. per-channel AOV, which can't vary by
+  // channel with our data, so a trend line would imply false precision).
+  hideSparkline?: boolean;
 }) {
   const change = pctChange(bucket.current, bucket.prior);
   // AOV and conversion are rates — the 7-day bucket already holds the
@@ -70,9 +78,18 @@ function Card({
           <span className="text-zinc-400 dark:text-zinc-500">new (no prior comparison)</span>
         )}
       </div>
-      <div className={`mt-3 ${color}`}>
-        <Sparkline points={bucket.daily} kind={kind} bands={bands} />
-      </div>
+      {note && (
+        <div className="mt-1 text-[10px] italic text-amber-600 dark:text-amber-500">{note}</div>
+      )}
+      {hideSparkline ? (
+        <div className="mt-3 flex h-12 items-center text-[11px] text-zinc-400 dark:text-zinc-500">
+          per-channel trend not available
+        </div>
+      ) : (
+        <div className={`mt-3 ${color}`}>
+          <Sparkline points={bucket.daily} kind={kind} bands={bands} />
+        </div>
+      )}
       <div className="mt-3 grid grid-cols-3 gap-2 border-t border-zinc-100 pt-2 dark:border-zinc-800">
         <Tiny label="Yesterday" value={fmt(bucket.yesterday, kind)} />
         <Tiny label={sevenDayLabel} value={fmt(sevenDayAvg, kind)} />
@@ -150,9 +167,10 @@ export function ChannelCards({
         <Card title={`Conversion · ${period}d${suffix}`} bucket={convRate} kind="percent" color="text-indigo-600 dark:text-indigo-400" bands={bands} channelMode={channelMode} source="Shopify" />
       </section>
       <section className="grid grid-cols-1 gap-3 md:grid-cols-2">
-        <Card title={`Orders · ${period}d${suffix}`} bucket={orders} kind="count" color="text-emerald-600 dark:text-emerald-400" bands={bands} channelMode={channelMode} source="Snowflake" />
-        <Card title={`Revenue${allocated} · ${period}d${suffix}`} bucket={revenue} kind="currency" color="text-emerald-600 dark:text-emerald-400" bands={bands} channelMode={channelMode} source="Snowflake" />
-        <Card title={`AOV${allocated} · ${period}d${suffix}`} bucket={aov} kind="aov" color="text-blue-600 dark:text-blue-400" bands={bands} channelMode={channelMode} source="Snowflake" />
+        <Card title={`Orders · ${period}d${suffix}`} bucket={orders} kind="count" color="text-emerald-600 dark:text-emerald-400" bands={bands} channelMode={channelMode} source={channelMode ? 'Shopify' : 'Snowflake'} note={channelMode ? 'implied = sessions × conversion' : undefined} />
+        <Card title={`Revenue${allocated} · ${period}d${suffix}`} bucket={revenue} kind="currency" color="text-emerald-600 dark:text-emerald-400" bands={bands} channelMode={channelMode} source="Snowflake" note={channelMode ? 'allocated by session share' : undefined} />
+        <Card title={`AOV${allocated} · ${period}d${suffix}`} bucket={aov} kind="aov" color="text-blue-600 dark:text-blue-400" bands={bands} channelMode={channelMode} source="Snowflake" note={channelMode ? '≈ page AOV — not channel-specific' : undefined} hideSparkline={channelMode} />
+
         {!channelMode && (
           <Card title={`Subscription rev (landed here) · ${period}d`} bucket={all.subRevenue} kind="currency" color="text-purple-600 dark:text-purple-400" bands={bands} channelMode={false} source="Snowflake" />
         )}
