@@ -2,7 +2,7 @@ import { execute } from '@/lib/snowflake';
 import { withCache } from '@/lib/cache';
 import type { Brand, DailyPoint, Period } from '@/lib/queries/orders';
 import { getWatchedPaths, getHiddenPaths, getPinnedPaths, getLPPaths, getSocialPaths } from '@/lib/watched-store';
-import { getChannelSessions, getSessionsByPath, getProductVariantTitles, getChannelSessionsByPath, CHANNELS, type ProductVariantTitles } from '@/lib/shopify';
+import { getChannelSessions, getChannelSalesByReferrer, getSessionsByPath, getProductVariantTitles, getChannelSessionsByPath, CHANNELS, type ProductVariantTitles } from '@/lib/shopify';
 import { getActiveTests } from '@/lib/intelligems-api';
 import { getAllAttachedPaths } from '@/lib/intelligems-attach';
 
@@ -34,6 +34,9 @@ export type Layer2Row = {
   sessions?: number;
   convRate?: number; // percent (0-100)
   priorSessions?: number; // for sessions-based trend on attribution rows
+  // Channel Attribution only: MEASURED per-channel AOV (real orders +
+  // revenue from ShopifyQL `sales` by referrer). Undefined when unavailable.
+  aov?: number;
   // True when this row is force-included via the pinned list (shows even
   // if it isn't top-by-revenue), rather than discovered organically.
   pinned?: boolean;
@@ -580,12 +583,19 @@ export async function getChannelAttribution(
   brand: Brand,
   period: Period,
 ): Promise<Layer2Row[]> {
-  const channels = await getChannelSessions(brand, period);
+  const [channels, salesByRef] = await Promise.all([
+    getChannelSessions(brand, period),
+    getChannelSalesByReferrer(brand, period).catch(
+      () => new Map<string, { orders: number; revenue: number; aov: number }>(),
+    ),
+  ]);
   if (channels.length > 0) {
     return channels.map((c) => {
       const ordersAttributed = Math.round(c.sessions * (c.convRate / 100));
       const labelSource = c.source || '(none)';
       const fullLabel = c.name ? `${labelSource} · ${c.name}` : labelSource;
+      // Real orders/revenue/AOV for this referrer, if the sales dataset has it.
+      const sales = salesByRef.get(`${c.source || '(none)'}|${c.name}`);
       return {
         key: `${labelSource}|${c.name}`,
         label: fullLabel,
@@ -597,6 +607,7 @@ export async function getChannelAttribution(
         sessions: c.sessions,
         convRate: c.convRate,
         priorSessions: c.priorSessions,
+        aov: sales && sales.orders > 0 ? sales.aov : undefined,
       };
     });
   }

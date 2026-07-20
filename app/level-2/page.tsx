@@ -182,6 +182,7 @@ function Layer2Table({
   pathKeyed,
   showSessions,
   showRevenue,
+  showAov,
   lpTab,
   socialTab,
   reorderTab,
@@ -194,6 +195,7 @@ function Layer2Table({
   pathKeyed: boolean;
   showSessions: boolean;
   showRevenue: boolean;
+  showAov?: boolean;
   lpTab?: boolean;
   socialTab?: boolean;
   reorderTab?: boolean;
@@ -226,6 +228,14 @@ function Layer2Table({
             </th>
           )}
           <th className="px-5 py-2 text-right font-medium">{metricNoun}</th>
+          {showAov && (
+            <th
+              className="px-5 py-2 text-right font-medium"
+              title="Measured average order value for this channel — real orders ÷ revenue from Shopify's sales-by-referrer data (not allocated)"
+            >
+              AOV
+            </th>
+          )}
           {showRevenue && <th className="px-5 py-2 text-right font-medium">Revenue</th>}
           <th className="px-5 py-2 text-right font-medium">vs prior</th>
           {showRevenue && (
@@ -336,6 +346,13 @@ function Layer2Table({
               <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
                 {r.currentCount.toLocaleString()}
               </td>
+              {showAov && (
+                <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
+                  {r.aov !== undefined
+                    ? `$${r.aov.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                    : <span className="text-zinc-400 dark:text-zinc-500">—</span>}
+                </td>
+              )}
               {showRevenue && (
                 <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
                   ${r.currentRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
@@ -408,6 +425,9 @@ export default async function Level2Page({
   ]);
   const showSessions = pathKeyedTabs.has(tab) || tab === 'attribution';
   const showRevenue = tab !== 'attribution';
+  // Channel Attribution shows a MEASURED per-channel AOV (real orders +
+  // revenue from Shopify's sales-by-referrer data).
+  const showAov = tab === 'attribution';
   // Per-tab one-line description under the heading.
   const tabBlurb: Partial<Record<Layer2Tab, string>> = {
     lps: 'manually-curated landing pages',
@@ -510,6 +530,7 @@ export default async function Level2Page({
             pathKeyed={pathKeyedTabs.has(tab)}
             showSessions={showSessions}
             showRevenue={showRevenue}
+            showAov={showAov}
             lpTab={tab === 'lps'}
             socialTab={tab === 'social'}
             reorderTab={tab === 'watched'}

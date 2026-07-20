@@ -877,6 +877,7 @@ function Layer2Table({
   hideable,
   showSessions,
   showRevenue,
+  showAov,
   igTests,
   bands,
   sortKey,
@@ -903,6 +904,7 @@ function Layer2Table({
   reorderTab: boolean;
   showSessions: boolean;
   showRevenue: boolean;
+  showAov?: boolean;
   igTests: IntelligemsTest[];
   bands?: SparklineBand[];
   sortKey: Layer2SortKey | '';
@@ -945,6 +947,14 @@ function Layer2Table({
             />
           )}
           <SortTh label={metricNoun} col="count" sortKey={sortKey} sortDir={sortDir} hrefForSort={hrefForSort} />
+          {showAov && (
+            <th
+              className="px-5 py-2 text-right font-medium"
+              title="Measured average order value for this channel — real orders ÷ revenue from Shopify's sales-by-referrer data (not allocated)"
+            >
+              AOV
+            </th>
+          )}
           {showRevenue && (
             <SortTh label="Sub" col="sub" sortKey={sortKey} sortDir={sortDir} hrefForSort={hrefForSort} />
           )}
@@ -1123,6 +1133,13 @@ function Layer2Table({
               <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
                 {r.currentCount.toLocaleString()}
               </td>
+              {showAov && (
+                <td className="px-5 py-3 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
+                  {r.aov !== undefined
+                    ? `$${r.aov.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                    : <span className="text-zinc-400 dark:text-zinc-500">—</span>}
+                </td>
+              )}
               {showRevenue && (
                 <td className="px-5 py-3 text-right tabular-nums text-zinc-500 dark:text-zinc-400">
                   {r.subCount !== undefined && r.subCount > 0
@@ -1757,6 +1774,7 @@ export default async function Home({
               hideable={hideable}
               showSessions={starrableTabs.has(tab) || tab === 'lps' || tab === 'social' || tab === 'abtests' || tab === 'attribution'}
               showRevenue={tab !== 'attribution'}
+              showAov={tab === 'attribution'}
               igTests={igTests}
               bands={sparkBands}
               sortKey={sortKey}
