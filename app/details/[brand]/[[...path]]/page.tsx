@@ -207,7 +207,15 @@ function ScrollBar({ pct }: { pct: number | null }) {
 
 // Cohort-attributed A/B results table for one test (control vs variants
 // with RPV uplift), or a single-row summary for a 100% rollout.
-function TestResults({ results }: { results: ExperienceResults }) {
+function TestResults({
+  results,
+  previewUrl,
+}: {
+  results: ExperienceResults;
+  // When set (active tests only), each variation name links to the live page
+  // forced into that variation via Intelligems' ?igTg=<group id> parameter.
+  previewUrl?: string | null;
+}) {
   const vars = results.variations;
   if (vars.length === 0) return null;
   const control = vars.find((v) => v.isControl) ?? vars[0];
@@ -244,7 +252,19 @@ function TestResults({ results }: { results: ExperienceResults }) {
             return (
               <tr key={v.id} className="border-t border-amber-100 dark:border-amber-900/40">
                 <td className="py-1 pr-3 text-zinc-700 dark:text-zinc-300">
-                  {v.name}
+                  {previewUrl ? (
+                    <a
+                      href={`${previewUrl}${previewUrl.includes('?') ? '&' : '?'}igTg=${encodeURIComponent(v.id)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-medium text-blue-600 underline decoration-dotted underline-offset-2 hover:text-blue-500 dark:text-blue-400"
+                      title="Open this page live, forced into this variation (Intelligems preview)"
+                    >
+                      {v.name} ↗
+                    </a>
+                  ) : (
+                    v.name
+                  )}
                   {v.isControl && (
                     <span className="ml-1 text-[10px] text-zinc-400">
                       {multi ? '(control)' : '(rolled out)'}
@@ -341,6 +361,11 @@ export default async function PageDeepDivePage({
 
   const data = await getPageDeepDive(brand, path, period);
   const heatmapUrl = clarityHeatmapUrl(brand, path);
+  // Live storefront URL for this page — used to open A/B variations forced
+  // into a specific Intelligems group (?igTg=). Null if no install / domain.
+  const pageStorefrontUrl = data.storefrontBaseUrl
+    ? `${data.storefrontBaseUrl}${path === '/' ? '' : path}`
+    : null;
 
   // Team notes are fetched first so they can feed the AI analysis as
   // authoritative context — a note (e.g. a redirect bug) revises the read.
@@ -606,7 +631,7 @@ export default async function PageDeepDivePage({
                       — visitors who land there are sent here, so this page absorbs their traffic.
                     </div>
                   )}
-                  {t.results && <TestResults results={t.results} />}
+                  {t.results && <TestResults results={t.results} previewUrl={pageStorefrontUrl} />}
                 </li>
               ))}
             </ul>
@@ -614,6 +639,9 @@ export default async function PageDeepDivePage({
               Live from Intelligems · results are <span className="font-medium">test-level</span>{' '}
               (cohort-attributed across the whole experiment, not just this page). Template/
               product-targeted tests can&rsquo;t be auto-located — attach them below.
+              {pageStorefrontUrl && (
+                <> Click a <span className="font-medium">variation name</span> to open this page live, forced into that variation.</>
+              )}
             </p>
             </>
           ) : (

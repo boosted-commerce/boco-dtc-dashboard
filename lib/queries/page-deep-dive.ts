@@ -5,6 +5,7 @@ import {
   getSourceByPath,
   getPageSessionTimeSeries,
   getChannelDailyByPath,
+  getStorefrontBaseUrl,
   getProductVariants,
   type SourceBreakdownRow,
   type SessionDailyPoint,
@@ -112,6 +113,10 @@ export type PageDeepDive = {
   // Per-channel rich-card data for the "filter by channel" dropdown above
   // the cards. One entry per traffic channel on this page.
   channelCards: ChannelCard[];
+  // Primary storefront URL (e.g. "https://www.asterwood.co") for building
+  // customer-facing links — used to open A/B variations live via ?igTg=.
+  // Null when the brand has no Shopify install.
+  storefrontBaseUrl: string | null;
 };
 
 export type VariantSalesRow = {
@@ -608,7 +613,7 @@ export async function getPageDeepDive(
   // Bump the version when the PageDeepDive shape changes so stale cached
   // objects (missing newer fields like activeTests) can't be served.
   return withCache(
-    `deepdive:${brand}:${period}:${encodeURIComponent(path)}:v17`,
+    `deepdive:${brand}:${period}:${encodeURIComponent(path)}:v18`,
     120,
     () => getPageDeepDiveUncached(brand, path, period),
   );
@@ -639,6 +644,7 @@ async function getPageDeepDiveUncached(
     igEnded,
     variants,
     channelDaily,
+    storefrontBaseUrl,
   ] = await Promise.all([
     getSessionsByPath(brand, period).catch(() => new Map()),
     getSourceByPath(brand, path, period).catch(() => [] as SourceBreakdownRow[]),
@@ -674,6 +680,7 @@ async function getPageDeepDiveUncached(
     getChannelDailyByPath(brand, path, period).catch(
       () => new Map<string, ChannelDailyPoint[]>(),
     ),
+    getStorefrontBaseUrl(brand).catch(() => null),
   ]);
 
   // Allocate the page's real (Snowflake) revenue across channels in
@@ -833,5 +840,6 @@ async function getPageDeepDiveUncached(
     dismissedTests,
     variants,
     channelCards,
+    storefrontBaseUrl,
   };
 }
