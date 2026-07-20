@@ -105,6 +105,26 @@ async function runAdminGraphQL(
   }
 }
 
+// Primary storefront URL for a brand (e.g. "https://www.asterwood.co"), for
+// building customer-facing links like Intelligems variation previews. Prefers
+// the shop's primary custom domain; falls back to the myshopify domain.
+// Cached 24h (domains rarely change). Null when the brand has no install.
+export async function getStorefrontBaseUrl(brand: Brand): Promise<string | null> {
+  return withCache(`shopify:storefront-base:${brand}:v1`, 24 * 60 * 60, async () => {
+    const data = await runAdminGraphQL(
+      brand,
+      `query { shop { primaryDomain { url } myshopifyDomain } }`,
+    );
+    const shop = data?.shop as
+      | { primaryDomain?: { url?: string } | null; myshopifyDomain?: string | null }
+      | undefined;
+    const primary = shop?.primaryDomain?.url;
+    if (primary) return primary.replace(/\/+$/, '');
+    if (shop?.myshopifyDomain) return `https://${shop.myshopifyDomain}`;
+    return null;
+  });
+}
+
 // Start-of-today in the shop's timezone as an ISO string with offset
 // (e.g. "2026-06-14T00:00:00-07:00") for the Orders created_at filter.
 async function shopStartOfTodayIso(brand: Brand): Promise<string> {
