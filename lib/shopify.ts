@@ -602,6 +602,61 @@ export async function getPageSessionTimeSeries(
   });
 }
 
+// Real per-channel DAILY series for a single landing page. Combines
+// GROUP BY referring_channel with TIMESERIES day (Shopify renders this as a
+// multi-line chart), so each channel gets its own genuine daily sessions +
+// conversion — unlike the old approach that just scaled the page trend by a
+// constant share (which produced identical-shaped sparklines per channel).
+// convRate is a percent. Returns an empty map on failure / if the combined
+// query isn't supported, so callers can fall back gracefully.
+export type ChannelDailyPoint = { date: string; sessions: number; convRate: number };
+
+export async function getChannelDailyByPath(
+  brand: Brand,
+  path: string,
+  days: number,
+): Promise<Map<string, ChannelDailyPoint[]>> {
+  const safePath = path.replace(/'/g, "''");
+  const out = new Map<string, ChannelDailyPoint[]>();
+  const td = await runShopifyQL(
+    brand,
+    `FROM sessions SHOW sessions, conversion_rate WHERE landing_page_path = '${safePath}' GROUP BY referring_channel TIMESERIES day SINCE -${days}d UNTIL today ORDER BY day`,
+  ).catch(() => null);
+  if (!td) return out;
+  // channelForReferrer collapses several raw referrers into one normalized
+  // label, so multiple raw rows can land on the same (channel, date) — sum
+  // sessions and accumulate implied orders (sessions × conv) to re-derive a
+  // session-weighted conversion rate.
+  const acc = new Map<string, Map<string, { sessions: number; orders: number }>>();
+  for (const r of td.rows) {
+    const channel = channelForReferrer(r.referring_channel as string | null);
+    const date = String(r.day ?? '').slice(0, 10);
+    if (!date) continue;
+    const sessions = Number(r.sessions) || 0;
+    const convDec = Number(r.conversion_rate) || 0; // ShopifyQL returns a fraction
+    let byDate = acc.get(channel);
+    if (!byDate) {
+      byDate = new Map();
+      acc.set(channel, byDate);
+    }
+    const e = byDate.get(date) ?? { sessions: 0, orders: 0 };
+    e.sessions += sessions;
+    e.orders += sessions * convDec;
+    byDate.set(date, e);
+  }
+  for (const [channel, byDate] of acc) {
+    const pts = [...byDate.entries()]
+      .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+      .map(([date, e]) => ({
+        date,
+        sessions: e.sessions,
+        convRate: e.sessions > 0 ? (e.orders / e.sessions) * 100 : 0,
+      }));
+    out.set(channel, pts);
+  }
+  return out;
+}
+
 // Source breakdown for a single landing page. ShopifyQL's sessions
 // table doesn't expose device info (confirmed via probe — device_type,
 // device_category, device, client_type all return "Column Not Found"),

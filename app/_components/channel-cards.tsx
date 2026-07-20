@@ -140,7 +140,7 @@ export function ChannelCards({
         </select>
         {channelMode && (
           <span className="text-[11px] text-zinc-500 dark:text-zinc-400">
-            sessions/conv/orders exact · revenue allocated by converting-session share · trend shape follows the page
+            sessions &amp; conversion trends are per-channel · orders/revenue allocated by each day&rsquo;s session share
           </span>
         )}
       </div>

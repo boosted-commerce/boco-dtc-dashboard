@@ -4,9 +4,11 @@ import {
   getSessionsByPath,
   getSourceByPath,
   getPageSessionTimeSeries,
+  getChannelDailyByPath,
   getProductVariants,
   type SourceBreakdownRow,
   type SessionDailyPoint,
+  type ChannelDailyPoint,
 } from '@/lib/shopify';
 import { bucketFromTimeSeries } from '@/lib/queries/orders';
 import { getClarityMetrics, type ClarityPageMetrics } from '@/lib/clarity-metrics';
@@ -153,12 +155,18 @@ export type ChannelCard = {
   aov: Bucket;
 };
 
-// Build per-channel buckets from the (real) per-channel current/prior totals
-// plus the page-level daily series (scaled to each channel's session share
-// for the sparkline shape). Year-ago left at 0 — not available per channel.
+// Build per-channel buckets. Sessions + conversion daily come from REAL
+// per-channel ShopifyQL series (channelDaily) so each channel's sparkline and
+// hover reflect that channel. Orders/revenue daily are the page's real daily
+// series allocated by the channel's *per-day* session share (varies day to
+// day, so the shape differs per channel) — a labeled allocation, since Shopify
+// has no per-channel order attribution. When channelDaily is missing for a
+// channel we fall back to the old constant-share scaling. Year-ago is 0 —
+// not available per channel.
 function buildChannelCards(
   sources: SourceBreakdownRow[],
   page: { sessions: Bucket; convRate: Bucket; orders: Bucket; revenue: Bucket },
+  channelDaily: Map<string, ChannelDailyPoint[]>,
 ): ChannelCard[] {
   const totalCur = sources.reduce((s, r) => s + r.sessions, 0);
   const totalPrior = sources.reduce((s, r) => s + r.priorSessions, 0);
@@ -175,26 +183,78 @@ function buildChannelCards(
     daily,
   });
 
+  // Total real per-channel sessions per day (denominator for daily share).
+  const totalSessByDate = new Map<string, number>();
+  for (const pts of channelDaily.values()) {
+    for (const p of pts) totalSessByDate.set(p.date, (totalSessByDate.get(p.date) ?? 0) + p.sessions);
+  }
+
   return sources.map((r) => {
     const shareCur = totalCur > 0 ? r.sessions / totalCur : 0;
     const sharePrior = totalPrior > 0 ? r.priorSessions / totalPrior : 0;
     const priorOrders = r.priorSessions * (r.priorConvRate / 100);
     const priorRevenue = page.revenue.prior * sharePrior;
-    const sessions = bucket(r.sessions, r.priorSessions, scale(page.sessions.daily, shareCur));
-    const orders = bucket(r.orders, priorOrders, scale(page.orders.daily, shareCur));
-    const revenue = bucket(r.revenue, priorRevenue, scale(page.revenue.daily, shareCur));
-    // Conversion is a rate, not a sum — the generic bucket() helper would
-    // SUM the daily conv %s for the 7-day tile (~7x inflated). Current/prior
-    // are the channel's real weighted rates; per-channel daily conv isn't
-    // available, so borrow the page's (weighted) yesterday/7-day/trend.
-    const convRate: Bucket = {
-      current: r.convRate,
-      prior: r.priorConvRate,
-      yesterday: page.convRate.yesterday,
-      sevenDayTotal: page.convRate.sevenDayTotal,
-      yearAgo: 0,
-      daily: page.convRate.daily,
+
+    const chDaily = channelDaily.get(r.source);
+    const chSessByDate = new Map<string, number>();
+    const chConvByDate = new Map<string, number>();
+    if (chDaily) {
+      for (const p of chDaily) {
+        chSessByDate.set(p.date, p.sessions);
+        chConvByDate.set(p.date, p.convRate);
+      }
+    }
+    // Per-day allocation factor from real channel session share that day.
+    const dayShare = (date: string): number => {
+      const tot = totalSessByDate.get(date) ?? 0;
+      return tot > 0 ? (chSessByDate.get(date) ?? 0) / tot : 0;
     };
+
+    let sessions: Bucket;
+    let convRate: Bucket;
+    let orders: Bucket;
+    let revenue: Bucket;
+
+    if (chDaily && chDaily.length > 0) {
+      // Real per-channel daily sessions/conv; allocate orders/revenue by daily share.
+      const sessDaily = page.sessions.daily.map((p) => ({ date: p.date, value: chSessByDate.get(p.date) ?? 0 }));
+      const convDaily = page.convRate.daily.map((p) => ({ date: p.date, value: chConvByDate.get(p.date) ?? 0 }));
+      const ordDaily = page.orders.daily.map((p) => ({ date: p.date, value: p.value * dayShare(p.date) }));
+      const revDaily = page.revenue.daily.map((p) => ({ date: p.date, value: p.value * dayShare(p.date) }));
+      sessions = bucket(r.sessions, r.priorSessions, sessDaily);
+      orders = bucket(r.orders, priorOrders, ordDaily);
+      revenue = bucket(r.revenue, priorRevenue, revDaily);
+      // Conversion is a rate: yesterday = last day's rate; 7-day tile = the
+      // session-weighted rate over the last 7 days (Σ implied orders ÷ Σ
+      // sessions), not a sum of daily rates.
+      const last7Sess = sessDaily.slice(-7).reduce((s, p) => s + p.value, 0);
+      const last7Ord = sessDaily.slice(-7).reduce((s, p, i, arr) => {
+        const idx = sessDaily.length - arr.length + i;
+        return s + p.value * ((convDaily[idx]?.value ?? 0) / 100);
+      }, 0);
+      convRate = {
+        current: r.convRate,
+        prior: r.priorConvRate,
+        yesterday: convDaily.length ? convDaily[convDaily.length - 1].value : 0,
+        sevenDayTotal: last7Sess > 0 ? (last7Ord / last7Sess) * 100 : 0,
+        yearAgo: 0,
+        daily: convDaily,
+      };
+    } else {
+      // Fallback (channel had no daily rows): old constant-share scaling.
+      sessions = bucket(r.sessions, r.priorSessions, scale(page.sessions.daily, shareCur));
+      orders = bucket(r.orders, priorOrders, scale(page.orders.daily, shareCur));
+      revenue = bucket(r.revenue, priorRevenue, scale(page.revenue.daily, shareCur));
+      convRate = {
+        current: r.convRate,
+        prior: r.priorConvRate,
+        yesterday: page.convRate.yesterday,
+        sevenDayTotal: page.convRate.sevenDayTotal,
+        yearAgo: 0,
+        daily: page.convRate.daily,
+      };
+    }
+
     // AOV is a rate, not a sum — divide revenue by orders at each aggregate
     // level (so the "7-day" tile is 7-day revenue ÷ 7-day orders, an AOV,
     // not the sum of daily AOVs). Mirrors deriveAovBucket.
@@ -548,7 +608,7 @@ export async function getPageDeepDive(
   // Bump the version when the PageDeepDive shape changes so stale cached
   // objects (missing newer fields like activeTests) can't be served.
   return withCache(
-    `deepdive:${brand}:${period}:${encodeURIComponent(path)}:v16`,
+    `deepdive:${brand}:${period}:${encodeURIComponent(path)}:v17`,
     120,
     () => getPageDeepDiveUncached(brand, path, period),
   );
@@ -578,6 +638,7 @@ async function getPageDeepDiveUncached(
     sessionSeries,
     igEnded,
     variants,
+    channelDaily,
   ] = await Promise.all([
     getSessionsByPath(brand, period).catch(() => new Map()),
     getSourceByPath(brand, path, period).catch(() => [] as SourceBreakdownRow[]),
@@ -607,6 +668,12 @@ async function getPageDeepDiveUncached(
     getPageSessionSeries(brand, path, 365 + period).catch(() => []),
     getEndedTests(brand).catch(() => [] as ActiveTest[]),
     getVariantBreakdown(brand, path, period).catch(() => [] as VariantSalesRow[]),
+    // Real per-channel daily sessions + conversion for this page (drives the
+    // channel-filter sparklines/hover). Empty map -> buildChannelCards falls
+    // back to the old constant-share scaling.
+    getChannelDailyByPath(brand, path, period).catch(
+      () => new Map<string, ChannelDailyPoint[]>(),
+    ),
   ]);
 
   // Allocate the page's real (Snowflake) revenue across channels in
@@ -639,13 +706,15 @@ async function getPageDeepDiveUncached(
     sessionSeries.length > 0 ? bucketFromTimeSeries(sessionSeries, period, 'convRate') : fallbackConv;
 
   // Per-channel card data for the "filter by channel" dropdown above the
-  // cards. Current/prior are exact per channel (sessions/conv/orders) or
-  // allocated (revenue); the sparkline reuses the page's trend shape scaled
-  // to the channel's share of sessions (Shopify has no per-channel daily
-  // series per page). Year-ago isn't available per channel.
+  // cards. Sessions/conversion sparklines use REAL per-channel daily series
+  // (channelDaily); orders/revenue are the page's daily allocated by the
+  // channel's per-day session share. Current/prior are exact per channel
+  // (sessions/conv/orders) or allocated (revenue). Year-ago isn't available
+  // per channel.
   const channelCards = buildChannelCards(
     sourceBreakdownWithRev,
     { sessions: sessionsBucket, convRate: convRateBucket, orders: buckets.orders, revenue: buckets.revenue },
+    channelDaily,
   );
 
   // Intelligems tests located to this page. The redirect (origin/dest)
