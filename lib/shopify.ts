@@ -847,3 +847,31 @@ export async function getChannelSessions(
     };
   });
 }
+
+// Real per-referrer sales (orders + revenue + AOV) from ShopifyQL's `sales`
+// dataset, keyed by `${order_referrer_source}|${order_referrer_name}` to line
+// up with getChannelSessions' rows. This is MEASURED channel AOV (unlike the
+// per-page channel cards, which can only allocate) — the sales dataset
+// attributes orders/revenue to a referrer, so total_sales ÷ orders is a true
+// per-channel AOV. Empty map on failure. total_sales ≈ our order-total revenue.
+export type ChannelSalesRow = { orders: number; revenue: number; aov: number };
+
+export async function getChannelSalesByReferrer(
+  brand: Brand,
+  period: Period,
+): Promise<Map<string, ChannelSalesRow>> {
+  const out = new Map<string, ChannelSalesRow>();
+  const td = await runShopifyQL(
+    brand,
+    `FROM sales SHOW orders, total_sales GROUP BY order_referrer_source, order_referrer_name SINCE -${period}d UNTIL today ORDER BY total_sales DESC LIMIT 200`,
+  ).catch(() => null);
+  if (!td) return out;
+  for (const r of td.rows) {
+    const source = String(r.order_referrer_source ?? '(none)');
+    const name = String(r.order_referrer_name ?? '');
+    const orders = Number(r.orders) || 0;
+    const revenue = Number(r.total_sales) || 0;
+    out.set(`${source}|${name}`, { orders, revenue, aov: orders > 0 ? revenue / orders : 0 });
+  }
+  return out;
+}
