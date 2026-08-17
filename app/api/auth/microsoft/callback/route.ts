@@ -11,6 +11,7 @@ import {
   msTenant,
   newSession,
   signSession,
+  getOrigin,
 } from '@/lib/auth';
 
 export const runtime = 'nodejs';
@@ -30,13 +31,16 @@ function decodeJwtPayload(jwt: string): Record<string, unknown> | null {
 }
 
 const loginRedirect = (request: Request, error: string) =>
-  NextResponse.redirect(new URL(`/login?error=${error}`, request.url));
+  NextResponse.redirect(new URL(`/login?error=${error}`, getOrigin(request)));
 
 export async function GET(request: Request) {
   if (!isAuthConfigured() || !isMicrosoftConfigured()) {
     return loginRedirect(request, 'config');
   }
   const url = new URL(request.url);
+  const forwardedHost = request.headers.get('x-forwarded-host');
+  const forwardedProto = request.headers.get('x-forwarded-proto');
+  const origin = forwardedHost ? `${forwardedProto || 'https'}://${forwardedHost}` : url.origin;
   const store = await cookies();
 
   if (url.searchParams.get('error')) return loginRedirect(request, 'microsoft');
@@ -52,7 +56,7 @@ export async function GET(request: Request) {
     return loginRedirect(request, 'state');
   }
 
-  const redirectUri = `${url.origin}/api/auth/microsoft/callback`;
+  const redirectUri = `${origin}/api/auth/microsoft/callback`;
   let claims: Record<string, unknown> | null = null;
   try {
     const tokenRes = await fetch(
@@ -102,5 +106,5 @@ export async function GET(request: Request) {
   });
 
   const dest = nextRaw.startsWith('/') && !nextRaw.startsWith('//') ? nextRaw : '/';
-  return NextResponse.redirect(new URL(dest, request.url));
+  return NextResponse.redirect(new URL(dest, origin));
 }

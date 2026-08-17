@@ -7,6 +7,7 @@ import {
   isMicrosoftConfigured,
   msTenant,
   randomState,
+  getOrigin,
 } from '@/lib/auth';
 
 export const runtime = 'nodejs';
@@ -17,12 +18,15 @@ export const dynamic = 'force-dynamic';
 // CSRF state + post-login destination in short-lived cookies.
 export async function GET(request: Request) {
   if (!isAuthConfigured() || !isMicrosoftConfigured()) {
-    return NextResponse.redirect(new URL('/login?error=config', request.url));
+    return NextResponse.redirect(new URL('/login?error=config', getOrigin(request)));
   }
   const url = new URL(request.url);
+  const forwardedHost = request.headers.get('x-forwarded-host');
+  const forwardedProto = request.headers.get('x-forwarded-proto');
+  const origin = forwardedHost ? `${forwardedProto || 'https'}://${forwardedHost}` : url.origin;
   const next = url.searchParams.get('next') || '/';
   const state = randomState();
-  const redirectUri = `${url.origin}/api/auth/microsoft/callback`;
+  const redirectUri = `${origin}/api/auth/microsoft/callback`;
 
   const authUrl = new URL(
     `https://login.microsoftonline.com/${msTenant()}/oauth2/v2.0/authorize`,

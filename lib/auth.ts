@@ -97,6 +97,17 @@ export function randomState(): string {
   return crypto.randomBytes(16).toString('hex');
 }
 
+// The plain Web Request.url naturally reflects the real public URL on
+// Vercel's runtime, but self-hosted via `next start` behind a reverse
+// proxy it only reflects the app's own local bind address. Prefer the
+// standard forwarded headers (set by our nginx config) when present.
+export function getOrigin(request: Request): string {
+  const forwardedHost = request.headers.get('x-forwarded-host');
+  const forwardedProto = request.headers.get('x-forwarded-proto');
+  if (forwardedHost) return `${forwardedProto || 'https'}://${forwardedHost}`;
+  return new URL(request.url).origin;
+}
+
 // Email passes the domain gate: @boostedcommerce.com. (Microsoft id
 // tokens don't carry an email_verified claim; the tenant-restricted
 // authority is the primary gate, this domain check is defense in depth.)
