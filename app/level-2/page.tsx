@@ -222,9 +222,9 @@ function Layer2Table({
           {showSessions && (
             <th
               className="px-5 py-2 text-right font-medium"
-              title="Completed orders ÷ sessions (our calculation from Snowflake)"
+              title="Completed orders ÷ sessions (our calculation from Snowflake). A landing-page-attributed rate — distinct from Conv rate, which is Shopify's session-attributed completed-checkout rate."
             >
-              Order rate
+              Order rate (attributed)
             </th>
           )}
           <th className="px-5 py-2 text-right font-medium">{metricNoun}</th>

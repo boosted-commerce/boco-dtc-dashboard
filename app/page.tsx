@@ -938,7 +938,7 @@ function Layer2Table({
           )}
           {showSessions && (
             <SortTh
-              label="Order rate"
+              label="Order rate (attributed)"
               col="orderRate"
               sortKey={sortKey}
               sortDir={sortDir}
