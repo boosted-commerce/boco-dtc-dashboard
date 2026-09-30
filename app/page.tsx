@@ -1492,7 +1492,7 @@ export default async function Home({
               active={period}
               hrefFor={(p) => `/?brand=${brand}&period=${p}&tab=${tab}&source=${source}`}
               ariaLabel="Select period"
-              labelFor={(p) => (p === 1 ? 'Yesterday' : `${p} days`)}
+              labelFor={(p) => (p === 1 ? '1D' : `${p} days`)}
               preserveScroll
             />
             {isAuthConfigured() && (
