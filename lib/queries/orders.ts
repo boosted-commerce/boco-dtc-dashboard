@@ -7,8 +7,11 @@ import {
   type SessionDailyPoint,
 } from '@/lib/shopify';
 
-export type Period = 7 | 28 | 90;
-export const PERIODS: readonly Period[] = [7, 28, 90] as const;
+// 1 = yesterday only (today excluded, like every other window). The window
+// math is fully period-parametric (current = last N days, prior = the N
+// before), so a 1-day period naturally means current=yesterday, prior=day-before.
+export type Period = 1 | 7 | 28 | 90;
+export const PERIODS: readonly Period[] = [1, 7, 28, 90] as const;
 
 export function parsePeriod(raw: unknown): Period {
   const n = typeof raw === 'string' ? Number(raw) : raw;
