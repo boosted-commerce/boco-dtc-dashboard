@@ -461,7 +461,7 @@ export default async function Level2Page({
             active={period}
             hrefFor={(p) => `/level-2?brand=${brand}&period=${p}&tab=${tab}`}
             ariaLabel="Select period"
-            labelFor={(p) => (p === 1 ? 'Yesterday' : `${p} days`)}
+            labelFor={(p) => (p === 1 ? '1D' : `${p} days`)}
           />
         </header>
 
