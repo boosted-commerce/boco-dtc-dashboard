@@ -464,7 +464,7 @@ export default async function PageDeepDivePage({
                       : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
                   }`}
                 >
-                  {p}d
+                  {p === 1 ? '1D' : `${p}d`}
                 </Link>
               ))}
             </div>
